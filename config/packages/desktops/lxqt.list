@@ -1,0 +1,12 @@
+# Praxis desktop profile: lxqt
+xorg-server
+xorg-xinit
+lxqt-session
+lxqt-panel
+lxqt-config
+pcmanfm-qt
+qterminal
+sddm
+networkmanager
+noto-fonts
+ttf-dejavu

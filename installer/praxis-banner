@@ -1,0 +1,26 @@
+#!/bin/sh
+
+set -eu
+
+if [ -n "${PRAXIS_CONFIG_ROOT:-}" ] && [ -r "${PRAXIS_CONFIG_ROOT}/praxis.env" ]; then
+    . "${PRAXIS_CONFIG_ROOT}/praxis.env"
+elif [ -r /etc/praxis/praxis.env ]; then
+    . /etc/praxis/praxis.env
+fi
+
+PRAXIS_BRANDING_DIR="${PRAXIS_BRANDING_ROOT:-/usr/share/praxis/branding/fastfetch}"
+PRAXIS_LOGO_FILE="${PRAXIS_BRANDING_DIR}/praxis.txt"
+PRAXIS_TEXT_FILE="${PRAXIS_BRANDING_DIR}/praxis-text.txt"
+
+if command -v praxis-fetch >/dev/null 2>&1; then
+    praxis-fetch || true
+elif [ -r "${PRAXIS_TEXT_FILE}" ]; then
+    cat "${PRAXIS_TEXT_FILE}"
+else
+    printf 'Praxis\n'
+fi
+
+printf '\n'
+printf 'You are in %s %s\n' "${PRAXIS_NAME:-Praxis}" "${PRAXIS_VERSION:-0.1.0-dev}"
+printf '%s\n' "${PRAXIS_IDENTITY:-A shell-first Linux distro for people who want a clear system they can shape themselves.}"
+printf '%s\n' "${PRAXIS_TAGLINE:-A base Linux distro you can build on.}"

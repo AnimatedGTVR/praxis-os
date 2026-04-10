@@ -1,0 +1,32 @@
+Praxis
+
+A base Linux distro you can build on.
+
+Available commands:
+- praxis-live
+- praxis-help
+- praxis-status
+- praxis-preflight
+- praxis-disk-report
+- praxis-netcheck
+- praxis-support
+- praxis-install --hostname praxisbox /mnt/praxis
+- praxis-install --hostname praxisbox --desktop xfce --bundle internet /mnt/praxis
+- praxis-dev-install /mnt/praxis-dev
+- praxis-packages list
+- praxis-desktop list
+- praxis-target-check /mnt/praxis
+- praxis-postinstall /mnt/praxis
+- lsblk
+- blkid
+- fastfetch
+- praxis-fetch
+- praxis-fetch --text
+
+Local docs:
+- /usr/share/doc/praxis/INSTALL.md
+- /usr/share/doc/praxis/QEMU.md
+- /usr/share/doc/praxis/COMMANDS.md
+- /usr/share/doc/praxis/PACKAGES.md
+- /usr/share/doc/praxis/FIRST-BOOT.md
+- /usr/share/doc/praxis/TROUBLESHOOTING.md

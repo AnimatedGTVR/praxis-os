@@ -1,0 +1,11 @@
+# Praxis desktop profile: i3
+xorg-server
+xorg-xinit
+i3-wm
+i3status
+dmenu
+xterm
+networkmanager
+network-manager-applet
+noto-fonts
+ttf-dejavu

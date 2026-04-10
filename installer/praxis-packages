@@ -1,0 +1,357 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+REPO_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/.." 2>/dev/null && pwd || printf '%s\n' "")"
+ACTION="${1:-list}"
+
+usage() {
+    printf '%s\n' "usage:"
+    printf '%s\n' "  praxis-packages list [desktops|bundles]"
+    printf '%s\n' "  praxis-packages show desktop <name>"
+    printf '%s\n' "  praxis-packages show bundle <name>"
+    printf '%s\n' "  praxis-packages install [--target path] [--desktop name] [--bundle name] [--packages pkg1,pkg2]"
+    printf '%s\n' "examples:"
+    printf '%s\n' "  praxis-packages list desktops"
+    printf '%s\n' "  praxis-packages show desktop xfce"
+    printf '%s\n' "  praxis-packages install --target /mnt/praxis --desktop xfce --bundle internet --packages firefox,vlc"
+}
+
+catalog_root() {
+    if [ -n "${PRAXIS_PACKAGE_ROOT:-}" ] && [ -d "${PRAXIS_PACKAGE_ROOT}" ]; then
+        printf '%s\n' "${PRAXIS_PACKAGE_ROOT}"
+        return 0
+    fi
+
+    if [ -d "$(praxis_config_root)/packages" ]; then
+        printf '%s\n' "$(praxis_config_root)/packages"
+        return 0
+    fi
+
+    if [ -n "${PRAXIS_SOURCE_ROOT:-}" ] && [ -d "${PRAXIS_SOURCE_ROOT}/etc/praxis/packages" ]; then
+        printf '%s\n' "${PRAXIS_SOURCE_ROOT}/etc/praxis/packages"
+        return 0
+    fi
+
+    if [ -n "${REPO_ROOT}" ] && [ -d "${REPO_ROOT}/config/packages" ]; then
+        printf '%s\n' "${REPO_ROOT}/config/packages"
+        return 0
+    fi
+
+    return 1
+}
+
+catalog_file() {
+    kind="$1"
+    name="$2"
+    root="$(catalog_root || true)"
+
+    if [ -z "${root}" ]; then
+        return 1
+    fi
+
+    file_path="${root}/${kind}/${name}.list"
+    if [ -r "${file_path}" ]; then
+        printf '%s\n' "${file_path}"
+        return 0
+    fi
+
+    return 1
+}
+
+list_named() {
+    kind="$1"
+    root="$(catalog_root || true)"
+
+    if [ -z "${root}" ] || [ ! -d "${root}/${kind}" ]; then
+        return 1
+    fi
+
+    for file_path in "${root}/${kind}/"*.list; do
+        [ -f "${file_path}" ] || continue
+        basename "${file_path}" .list
+    done | sort
+}
+
+emit_list_file() {
+    file_path="$1"
+    sed \
+        -e 's/[[:space:]]*#.*$//' \
+        -e 's/^[[:space:]]*//' \
+        -e 's/[[:space:]]*$//' \
+        -e '/^$/d' \
+        "${file_path}"
+}
+
+append_csv_values() {
+    csv_value="$1"
+    temp_file="$2"
+
+    if [ -z "${csv_value}" ]; then
+        return 0
+    fi
+
+    printf '%s\n' "${csv_value}" |
+        tr ', ' '\n\n' |
+        sed '/^$/d' >> "${temp_file}"
+}
+
+ensure_pacman_tree() {
+    target_root="$1"
+
+    mkdir -p \
+        "${target_root}/etc/pacman.d" \
+        "${target_root}/var/lib/pacman" \
+        "${target_root}/var/cache/pacman/pkg" \
+        "${target_root}/var/log"
+
+    if [ -r /etc/pacman.conf ] && [ ! -f "${target_root}/etc/pacman.conf" ]; then
+        cp /etc/pacman.conf "${target_root}/etc/pacman.conf"
+    fi
+
+    if [ -r /etc/pacman.d/mirrorlist ] && [ ! -f "${target_root}/etc/pacman.d/mirrorlist" ]; then
+        cp /etc/pacman.d/mirrorlist "${target_root}/etc/pacman.d/mirrorlist"
+    fi
+
+    if [ -d /etc/pacman.d/gnupg ] && [ ! -d "${target_root}/etc/pacman.d/gnupg" ]; then
+        mkdir -p "${target_root}/etc/pacman.d/gnupg"
+        find /etc/pacman.d/gnupg -maxdepth 1 -type f -readable 2>/dev/null | while read -r key_file; do
+            [ -n "${key_file}" ] || continue
+            cp "${key_file}" "${target_root}/etc/pacman.d/gnupg/$(basename "${key_file}")"
+        done
+    fi
+
+    if [ -d /usr/share/pacman ] && [ ! -d "${target_root}/usr/share/pacman" ]; then
+        mkdir -p "${target_root}/usr/share"
+        cp -a /usr/share/pacman "${target_root}/usr/share/pacman"
+    fi
+
+    if [ -d /usr/share/libalpm ] && [ ! -d "${target_root}/usr/share/libalpm" ]; then
+        mkdir -p "${target_root}/usr/share"
+        cp -a /usr/share/libalpm "${target_root}/usr/share/libalpm"
+    fi
+}
+
+write_package_meta() {
+    target_root="$1"
+    desktop_name="$2"
+    bundle_names="$3"
+    extra_names="$4"
+    package_names="$5"
+
+    mkdir -p "${target_root}/etc/praxis"
+
+    cat > "${target_root}/etc/praxis/packages.selected" <<EOF
+DESKTOP=${desktop_name}
+BUNDLES=${bundle_names}
+EXTRA=${extra_names}
+INSTALLED=${package_names}
+EOF
+}
+
+install_target_packages() {
+    target_root="$1"
+    desktop_name="$2"
+    bundle_names="$3"
+    extra_names="$4"
+    packages_file="$5"
+
+    if [ ! -x "$(command -v pacman 2>/dev/null || printf '')" ]; then
+        printf '%s\n' "missing required tool: pacman" >&2
+        exit 1
+    fi
+
+    if [ "$(id -u)" != "0" ] && [ "${PRAXIS_SKIP_PACKAGE_INSTALL:-0}" != "1" ]; then
+        printf '%s\n' "praxis-packages install needs to run as root." >&2
+        exit 1
+    fi
+
+    ensure_pacman_tree "${target_root}"
+
+    package_args_file="$(mktemp)"
+    trap 'rm -f "${package_args_file}" "${packages_file}"' EXIT INT TERM
+
+    sort -u "${packages_file}" > "${package_args_file}"
+
+    if [ ! -s "${package_args_file}" ]; then
+        printf '%s\n' "No packages selected." >&2
+        exit 1
+    fi
+
+    printf '%s\n' "Installing Praxis package selection:"
+    sed 's/^/  - /' "${package_args_file}"
+
+    if [ "${PRAXIS_SKIP_PACKAGE_INSTALL:-0}" = "1" ]; then
+        installed_names="$(tr '\n' ' ' < "${package_args_file}" | sed 's/[[:space:]]*$//')"
+        write_package_meta "${target_root}" "${desktop_name}" "${bundle_names}" "${extra_names}" "${installed_names}"
+        printf 'Package install skipped for dry run at %s\n' "${target_root}"
+        return 0
+    fi
+
+    if [ "${target_root}" = "/" ]; then
+        pacman -Sy --noconfirm --needed $(cat "${package_args_file}")
+    else
+        pacman_cache_dir="${target_root}/var/cache/pacman/pkg"
+        if [ -d /var/cache/pacman/pkg ]; then
+            pacman_cache_dir="/var/cache/pacman/pkg"
+        fi
+
+        pacman \
+            --root "${target_root}" \
+            --dbpath "${target_root}/var/lib/pacman" \
+            --cachedir "${pacman_cache_dir}" \
+            --logfile "${target_root}/var/log/pacman.log" \
+            --config "${target_root}/etc/pacman.conf" \
+            -Sy --noconfirm --needed $(cat "${package_args_file}")
+    fi
+
+    installed_names="$(tr '\n' ' ' < "${package_args_file}" | sed 's/[[:space:]]*$//')"
+    write_package_meta "${target_root}" "${desktop_name}" "${bundle_names}" "${extra_names}" "${installed_names}"
+
+    printf 'Package selection applied to %s\n' "${target_root}"
+}
+
+case "${ACTION}" in
+    list)
+        topic="${2:-all}"
+        case "${topic}" in
+            all)
+                printf '%s\n' "Desktop profiles:"
+                list_named desktops | sed 's/^/  - /'
+                printf '\n%s\n' "Bundles:"
+                list_named bundles | sed 's/^/  - /'
+                ;;
+            desktops|bundles)
+                list_named "${topic}" | sed 's/^/  - /'
+                ;;
+            *)
+                usage >&2
+                exit 1
+                ;;
+        esac
+        ;;
+    show)
+        kind="${2:-}"
+        name="${3:-}"
+        case "${kind}" in
+            desktop)
+                file_path="$(catalog_file desktops "${name}" || true)"
+                ;;
+            bundle)
+                file_path="$(catalog_file bundles "${name}" || true)"
+                ;;
+            *)
+                file_path=""
+                ;;
+        esac
+
+        if [ -z "${file_path}" ]; then
+            printf 'unknown package set: %s %s\n' "${kind}" "${name}" >&2
+            exit 1
+        fi
+
+        emit_list_file "${file_path}"
+        ;;
+    install)
+        shift
+        target_root="/"
+        desktop_name="none"
+        bundle_names=""
+        extra_names=""
+        packages_file="$(mktemp)"
+
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --target)
+                    shift
+                    target_root="${1:-}"
+                    ;;
+                --desktop)
+                    shift
+                    desktop_name="${1:-}"
+                    ;;
+                --bundle)
+                    shift
+                    if [ -n "${bundle_names}" ]; then
+                        bundle_names="${bundle_names},$1"
+                    else
+                        bundle_names="$1"
+                    fi
+                    ;;
+                --packages)
+                    shift
+                    if [ -n "${extra_names}" ]; then
+                        extra_names="${extra_names},$1"
+                    else
+                        extra_names="$1"
+                    fi
+                    ;;
+                -h|--help)
+                    usage
+                    exit 0
+                    ;;
+                *)
+                    printf 'unknown install option: %s\n' "$1" >&2
+                    usage >&2
+                    exit 1
+                    ;;
+            esac
+            shift
+        done
+
+        if [ -n "${desktop_name}" ] && [ "${desktop_name}" != "none" ]; then
+            desktop_file="$(catalog_file desktops "${desktop_name}" || true)"
+            if [ -z "${desktop_file}" ]; then
+                printf 'unknown desktop profile: %s\n' "${desktop_name}" >&2
+                exit 1
+            fi
+            emit_list_file "${desktop_file}" >> "${packages_file}"
+        fi
+
+        if [ -n "${bundle_names}" ]; then
+            old_ifs="${IFS}"
+            IFS=','
+            set -- ${bundle_names}
+            IFS="${old_ifs}"
+            for bundle_name in "$@"; do
+                [ -n "${bundle_name}" ] || continue
+                bundle_file="$(catalog_file bundles "${bundle_name}" || true)"
+                if [ -z "${bundle_file}" ]; then
+                    printf 'unknown bundle: %s\n' "${bundle_name}" >&2
+                    exit 1
+                fi
+                emit_list_file "${bundle_file}" >> "${packages_file}"
+            done
+        fi
+
+        append_csv_values "${extra_names}" "${packages_file}"
+
+        install_target_packages "${target_root}" "${desktop_name}" "${bundle_names}" "${extra_names}" "${packages_file}"
+        ;;
+    -h|--help)
+        usage
+        ;;
+    *)
+        usage >&2
+        exit 1
+        ;;
+esac

@@ -1,0 +1,17 @@
+# Praxis base manifest
+#
+# These are the core layers the distro is expected to own directly.
+
+boot
+kernel
+initramfs
+rootfs
+live-shell
+shell-runtime
+installer-cli
+filesystem-tools
+network-tools
+editor
+support-tools
+package-manager
+desktop-profiles

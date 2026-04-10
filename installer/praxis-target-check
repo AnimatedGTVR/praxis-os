@@ -1,0 +1,294 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+TARGET_ROOT="${1:-}"
+
+usage() {
+    printf '%s\n' "usage: praxis-target-check <target-root>"
+    printf '%s\n' "example: praxis-target-check /mnt/praxis"
+}
+
+print_field() {
+    printf '%-18s %s\n' "$1" "$2"
+}
+
+read_meta_value() {
+    META_FILE="$1"
+    META_KEY="$2"
+
+    if [ ! -r "${META_FILE}" ]; then
+        return 1
+    fi
+
+    sed -n "s/^${META_KEY}=//p" "${META_FILE}" | sed -n '1p'
+}
+
+if [ -z "${TARGET_ROOT}" ]; then
+    usage >&2
+    exit 1
+fi
+
+if [ ! -d "${TARGET_ROOT}" ]; then
+    printf 'missing target root: %s\n' "${TARGET_ROOT}" >&2
+    exit 1
+fi
+
+ROOT_MOUNTED="no"
+BOOT_MOUNTED="no"
+ROOT_FSTYPE="unknown"
+BOOT_FSTYPE="unknown"
+ESP_STATUS="unknown"
+INSTALL_MODE="missing"
+INSTALL_ENTRY="unknown"
+SYSTEMD_BOOT_ENTRY="unknown"
+SYSTEMD_BOOT_INSTALLED="unknown"
+TARGET_HOSTNAME="unknown"
+INSTALL_DESKTOP="none"
+INSTALL_BUNDLES="none"
+INSTALL_PACKAGES="none"
+HOSTS_STATUS="missing"
+ENTRY_FILE=""
+EXPECTED_ENTRY_FILE=""
+LOADER_CONF_FILE="${TARGET_ROOT}/boot/loader/loader.conf"
+LOADER_DEFAULT="unknown"
+ENTRY_LINUX="unknown"
+ENTRY_INITRD="unknown"
+STATUS=0
+WARNINGS=0
+
+if praxis_is_mountpoint "${TARGET_ROOT}"; then
+    ROOT_MOUNTED="yes"
+    ROOT_FSTYPE="$(praxis_find_mount_fstype "${TARGET_ROOT}" || true)"
+fi
+
+if praxis_is_mountpoint "${TARGET_ROOT}/boot"; then
+    BOOT_MOUNTED="yes"
+    BOOT_FSTYPE="$(praxis_find_mount_fstype "${TARGET_ROOT}/boot" || true)"
+fi
+
+[ -n "${ROOT_FSTYPE}" ] || ROOT_FSTYPE="unknown"
+[ -n "${BOOT_FSTYPE}" ] || BOOT_FSTYPE="unknown"
+
+case "${BOOT_FSTYPE}" in
+    vfat|fat|fat32|msdos)
+        ESP_STATUS="likely"
+        ;;
+    unknown)
+        ESP_STATUS="unknown"
+        ;;
+    *)
+        ESP_STATUS="unlikely"
+        ;;
+esac
+
+for CANDIDATE in "${TARGET_ROOT}/boot/loader/entries/"*.conf; do
+    if [ -f "${CANDIDATE}" ]; then
+        ENTRY_FILE="${CANDIDATE}"
+        break
+    fi
+done
+
+if [ -r "${TARGET_ROOT}/etc/praxis/install" ]; then
+    INSTALL_MODE="$(read_meta_value "${TARGET_ROOT}/etc/praxis/install" INSTALL_MODE || true)"
+    [ -n "${INSTALL_MODE}" ] || INSTALL_MODE="present"
+    TARGET_HOSTNAME="$(read_meta_value "${TARGET_ROOT}/etc/praxis/install" INSTALL_HOSTNAME || true)"
+    [ -n "${TARGET_HOSTNAME}" ] || TARGET_HOSTNAME="unknown"
+    INSTALL_ENTRY="$(read_meta_value "${TARGET_ROOT}/etc/praxis/install" INSTALL_ENTRY || true)"
+    [ -n "${INSTALL_ENTRY}" ] || INSTALL_ENTRY="unknown"
+    INSTALL_DESKTOP="$(read_meta_value "${TARGET_ROOT}/etc/praxis/install" INSTALL_DESKTOP || true)"
+    [ -n "${INSTALL_DESKTOP}" ] || INSTALL_DESKTOP="none"
+    INSTALL_BUNDLES="$(read_meta_value "${TARGET_ROOT}/etc/praxis/install" INSTALL_BUNDLES || true)"
+    [ -n "${INSTALL_BUNDLES}" ] || INSTALL_BUNDLES="none"
+    INSTALL_PACKAGES="$(read_meta_value "${TARGET_ROOT}/etc/praxis/install" INSTALL_PACKAGES || true)"
+    [ -n "${INSTALL_PACKAGES}" ] || INSTALL_PACKAGES="none"
+    SYSTEMD_BOOT_ENTRY="$(read_meta_value "${TARGET_ROOT}/etc/praxis/install" SYSTEMD_BOOT_ENTRY || true)"
+    [ -n "${SYSTEMD_BOOT_ENTRY}" ] || SYSTEMD_BOOT_ENTRY="unknown"
+    SYSTEMD_BOOT_INSTALLED="$(read_meta_value "${TARGET_ROOT}/etc/praxis/install" SYSTEMD_BOOT_INSTALLED || true)"
+    [ -n "${SYSTEMD_BOOT_INSTALLED}" ] || SYSTEMD_BOOT_INSTALLED="unknown"
+fi
+
+if [ "${INSTALL_ENTRY}" != "unknown" ]; then
+    EXPECTED_ENTRY_FILE="${TARGET_ROOT}/boot/loader/entries/${INSTALL_ENTRY}.conf"
+    if [ -f "${EXPECTED_ENTRY_FILE}" ]; then
+        ENTRY_FILE="${EXPECTED_ENTRY_FILE}"
+    fi
+fi
+
+if [ -f "${LOADER_CONF_FILE}" ]; then
+    LOADER_DEFAULT="$(sed -n 's/^default[[:space:]]\+//p' "${LOADER_CONF_FILE}" | sed -n '1p')"
+    [ -n "${LOADER_DEFAULT}" ] || LOADER_DEFAULT="unknown"
+fi
+
+if [ -n "${ENTRY_FILE}" ] && [ -r "${ENTRY_FILE}" ]; then
+    ENTRY_LINUX="$(sed -n 's/^linux[[:space:]]\+//p' "${ENTRY_FILE}" | sed -n '1p')"
+    [ -n "${ENTRY_LINUX}" ] || ENTRY_LINUX="unknown"
+    ENTRY_INITRD="$(sed -n 's/^initrd[[:space:]]\+//p' "${ENTRY_FILE}" | sed -n '1p')"
+    [ -n "${ENTRY_INITRD}" ] || ENTRY_INITRD="unknown"
+fi
+
+if [ "${TARGET_HOSTNAME}" = "unknown" ] && [ -r "${TARGET_ROOT}/etc/hostname" ]; then
+    TARGET_HOSTNAME="$(sed -n '1p' "${TARGET_ROOT}/etc/hostname")"
+    [ -n "${TARGET_HOSTNAME}" ] || TARGET_HOSTNAME="unknown"
+fi
+
+if [ -r "${TARGET_ROOT}/etc/hosts" ] && [ "${TARGET_HOSTNAME}" != "unknown" ]; then
+    if grep -Eq "^127\\.0\\.1\\.1[[:space:]]+${TARGET_HOSTNAME}\$" "${TARGET_ROOT}/etc/hosts"; then
+        HOSTS_STATUS="ok"
+    else
+        HOSTS_STATUS="present"
+    fi
+fi
+
+praxis_header "Target Check"
+print_field "Target" "${TARGET_ROOT}"
+print_field "Root mounted" "${ROOT_MOUNTED}"
+print_field "Boot mounted" "${BOOT_MOUNTED}"
+print_field "Root fs" "${ROOT_FSTYPE}"
+print_field "Boot fs" "${BOOT_FSTYPE}"
+print_field "Boot is ESP" "${ESP_STATUS}"
+print_field "Install mode" "${INSTALL_MODE}"
+print_field "Hostname" "${TARGET_HOSTNAME}"
+print_field "Desktop" "${INSTALL_DESKTOP}"
+print_field "Bundles" "${INSTALL_BUNDLES}"
+print_field "Packages" "${INSTALL_PACKAGES}"
+print_field "Install entry" "${INSTALL_ENTRY}"
+print_field "Loader default" "${LOADER_DEFAULT}"
+print_field "Bootctl entry" "${SYSTEMD_BOOT_ENTRY}"
+print_field "Bootctl installed" "${SYSTEMD_BOOT_INSTALLED}"
+
+if [ -f "${TARGET_ROOT}/boot/praxis/vmlinuz" ]; then
+    print_field "Kernel" "present"
+else
+    print_field "Kernel" "missing"
+    STATUS=1
+fi
+
+if [ -f "${TARGET_ROOT}/boot/praxis/initramfs.cpio.gz" ]; then
+    print_field "Initramfs" "present"
+else
+    print_field "Initramfs" "missing"
+    STATUS=1
+fi
+
+if [ -n "${ENTRY_FILE}" ]; then
+    print_field "Loader entry" "${ENTRY_FILE##*/}"
+else
+    print_field "Loader entry" "missing"
+    STATUS=1
+fi
+
+if [ -f "${LOADER_CONF_FILE}" ]; then
+    print_field "loader.conf" "present"
+else
+    print_field "loader.conf" "missing"
+    STATUS=1
+fi
+
+if [ "${ENTRY_LINUX}" = "/praxis/vmlinuz" ]; then
+    print_field "Entry linux" "${ENTRY_LINUX}"
+elif [ -n "${ENTRY_FILE}" ]; then
+    print_field "Entry linux" "${ENTRY_LINUX}"
+    STATUS=1
+fi
+
+if [ "${ENTRY_INITRD}" = "/praxis/initramfs.cpio.gz" ]; then
+    print_field "Entry initrd" "${ENTRY_INITRD}"
+elif [ -n "${ENTRY_FILE}" ]; then
+    print_field "Entry initrd" "${ENTRY_INITRD}"
+    STATUS=1
+fi
+
+if [ -f "${TARGET_ROOT}/etc/fstab" ]; then
+    print_field "fstab" "present"
+else
+    print_field "fstab" "missing"
+    STATUS=1
+fi
+
+if [ -r "${TARGET_ROOT}/etc/hostname" ]; then
+    print_field "hostname" "present"
+else
+    print_field "hostname" "missing"
+    STATUS=1
+fi
+
+if [ "${HOSTS_STATUS}" = "ok" ]; then
+    print_field "hosts" "present"
+elif [ "${HOSTS_STATUS}" = "present" ]; then
+    print_field "hosts" "present"
+    WARNINGS=$((WARNINGS + 1))
+else
+    print_field "hosts" "missing"
+    STATUS=1
+fi
+
+if [ -r "${TARGET_ROOT}/etc/praxis/install" ]; then
+    print_field "Install meta" "present"
+else
+    print_field "Install meta" "missing"
+    STATUS=1
+fi
+
+if [ -f "${TARGET_ROOT}/etc/praxis/packages.selected" ]; then
+    print_field "Package meta" "present"
+else
+    print_field "Package meta" "optional"
+fi
+
+if [ -f "${TARGET_ROOT}/boot/praxis/README.txt" ]; then
+    print_field "Boot README" "present"
+else
+    print_field "Boot README" "missing"
+    WARNINGS=$((WARNINGS + 1))
+fi
+
+if [ -f "${TARGET_ROOT}/boot/praxis/limine.conf" ]; then
+    print_field "Limine config" "present"
+else
+    print_field "Limine config" "missing"
+    WARNINGS=$((WARNINGS + 1))
+fi
+
+if [ "${SYSTEMD_BOOT_INSTALLED}" = "1" ]; then
+    if [ -f "${TARGET_ROOT}/boot/EFI/systemd/systemd-bootx64.efi" ] || [ -f "${TARGET_ROOT}/boot/EFI/BOOT/BOOTX64.EFI" ]; then
+        print_field "Bootloader EFI" "present"
+    else
+        print_field "Bootloader EFI" "missing"
+        STATUS=1
+    fi
+fi
+
+printf '\n'
+
+if [ "${STATUS}" = "0" ] && [ "${WARNINGS}" = "0" ]; then
+    printf '%s\n' "Target looks install-ready."
+    exit 0
+fi
+
+if [ "${STATUS}" = "0" ]; then
+    printf '%s\n' "Target looks install-ready, but one or more optional Praxis artifacts are missing."
+    exit 0
+fi
+
+printf '%s\n' "Target is missing one or more required install artifacts."
+exit 1

@@ -1,0 +1,117 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+desktop_command() {
+    case "$1" in
+        gnome)
+            printf '%s\n' "gnome-session"
+            ;;
+        plasma)
+            printf '%s\n' "startplasma-x11"
+            ;;
+        xfce)
+            printf '%s\n' "startxfce4"
+            ;;
+        budgie)
+            printf '%s\n' "budgie-desktop"
+            ;;
+        mate)
+            printf '%s\n' "mate-session"
+            ;;
+        lxqt)
+            printf '%s\n' "startlxqt"
+            ;;
+        i3)
+            printf '%s\n' "i3"
+            ;;
+        openbox)
+            printf '%s\n' "openbox-session"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+usage() {
+    printf '%s\n' "usage:"
+    printf '%s\n' "  praxis-desktop list"
+    printf '%s\n' "  praxis-desktop start <desktop>"
+}
+
+case "${1:-list}" in
+    list)
+        printf '%s\n' "Praxis desktop launch commands:"
+        for desktop_name in gnome plasma xfce budgie mate lxqt i3 openbox; do
+            command_name="$(desktop_command "${desktop_name}")"
+            if command -v "${command_name}" >/dev/null 2>&1; then
+                printf '  - %-8s ready via %s\n' "${desktop_name}" "${command_name}"
+            else
+                printf '  - %-8s install profile available (launch command: %s)\n' "${desktop_name}" "${command_name}"
+            fi
+        done
+        printf '\n%s\n' "Use praxis-packages show desktop <name> to inspect packages."
+        ;;
+    start)
+        desktop_name="${2:-}"
+        if [ -z "${desktop_name}" ]; then
+            usage >&2
+            exit 1
+        fi
+
+        command_name="$(desktop_command "${desktop_name}" || true)"
+        if [ -z "${command_name}" ]; then
+            printf 'unknown desktop: %s\n' "${desktop_name}" >&2
+            exit 1
+        fi
+
+        if ! command -v startx >/dev/null 2>&1; then
+            printf '%s\n' "missing required command: startx" >&2
+            printf '%s\n' "Install a desktop profile first with praxis-packages or praxis-install." >&2
+            exit 1
+        fi
+
+        if ! command -v "${command_name}" >/dev/null 2>&1; then
+            printf 'desktop command not found: %s\n' "${command_name}" >&2
+            exit 1
+        fi
+
+        session_file="$(mktemp)"
+        trap 'rm -f "${session_file}"' EXIT INT TERM
+
+        cat > "${session_file}" <<EOF
+#!/bin/sh
+exec dbus-run-session ${command_name}
+EOF
+        chmod +x "${session_file}"
+
+        exec startx "${session_file}" --
+        ;;
+    -h|--help)
+        usage
+        ;;
+    *)
+        usage >&2
+        exit 1
+        ;;
+esac

@@ -1,0 +1,12 @@
+# Praxis desktop profile: budgie
+xorg-server
+xorg-xinit
+budgie-desktop
+gnome-terminal
+nautilus
+lightdm
+lightdm-gtk-greeter
+networkmanager
+network-manager-applet
+noto-fonts
+ttf-dejavu

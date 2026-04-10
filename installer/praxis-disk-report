@@ -1,0 +1,36 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+praxis_header "Disk Report"
+
+if command -v lsblk >/dev/null 2>&1; then
+    lsblk -o PATH,NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINT,MODEL 2>/dev/null || lsblk
+else
+    printf '%s\n' "lsblk is not available."
+fi
+
+printf '\n'
+printf '%s\n' "Install target convention:"
+printf '%s\n' "- mount the root filesystem at /mnt/praxis"
+printf '%s\n' "- mount the EFI system partition at /mnt/praxis/boot"
+printf '%s\n' "- run praxis-install --hostname praxisbox /mnt/praxis"

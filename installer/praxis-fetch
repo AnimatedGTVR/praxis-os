@@ -1,0 +1,64 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+REPO_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/.." 2>/dev/null && pwd || printf '%s\n' "")"
+
+if [ -n "${PRAXIS_CONFIG_ROOT:-}" ] && [ -r "${PRAXIS_CONFIG_ROOT}/praxis.env" ]; then
+    . "${PRAXIS_CONFIG_ROOT}/praxis.env"
+elif [ -r /etc/praxis/praxis.env ]; then
+    . /etc/praxis/praxis.env
+fi
+
+PRAXIS_BRANDING_DIR="${PRAXIS_BRANDING_ROOT:-/usr/share/praxis/branding/fastfetch}"
+PRAXIS_FASTFETCH_CONFIG="${PRAXIS_FASTFETCH_CONFIG:-/etc/xdg/fastfetch/config.jsonc}"
+PRAXIS_LOGO_FILE="${PRAXIS_BRANDING_DIR}/praxis.txt"
+PRAXIS_TEXT_FILE="${PRAXIS_BRANDING_DIR}/praxis-text.txt"
+
+if [ ! -r "${PRAXIS_LOGO_FILE}" ] && [ -n "${REPO_ROOT}" ]; then
+    PRAXIS_BRANDING_DIR="${REPO_ROOT}/branding/fastfetch"
+    PRAXIS_LOGO_FILE="${PRAXIS_BRANDING_DIR}/praxis.txt"
+    PRAXIS_TEXT_FILE="${PRAXIS_BRANDING_DIR}/praxis-text.txt"
+fi
+
+if [ ! -r "${PRAXIS_FASTFETCH_CONFIG}" ] && [ -n "${REPO_ROOT}" ]; then
+    PRAXIS_FASTFETCH_CONFIG="${REPO_ROOT}/rootfs/etc/xdg/fastfetch/config.jsonc"
+fi
+
+case "${1:-}" in
+    --text)
+        exec cat "${PRAXIS_TEXT_FILE}"
+        ;;
+    --logo)
+        exec cat "${PRAXIS_LOGO_FILE}"
+        ;;
+esac
+
+if command -v fastfetch >/dev/null 2>&1; then
+    if [ -r "${PRAXIS_FASTFETCH_CONFIG}" ]; then
+        if [ -r "${PRAXIS_LOGO_FILE}" ]; then
+            exec fastfetch --config "${PRAXIS_FASTFETCH_CONFIG}" --file "${PRAXIS_LOGO_FILE}" "$@"
+        fi
+        exec fastfetch --config "${PRAXIS_FASTFETCH_CONFIG}" "$@"
+    fi
+
+    if [ -r "${PRAXIS_LOGO_FILE}" ]; then
+        exec fastfetch --file "${PRAXIS_LOGO_FILE}" "$@"
+    fi
+fi
+
+if [ -r "${PRAXIS_TEXT_FILE}" ]; then
+    exec cat "${PRAXIS_TEXT_FILE}"
+fi
+
+printf '%s\n' "${PRAXIS_NAME:-Praxis}"

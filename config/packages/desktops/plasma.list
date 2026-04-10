@@ -1,0 +1,10 @@
+# Praxis desktop profile: plasma
+xorg-server
+xorg-xinit
+plasma-desktop
+konsole
+dolphin
+sddm
+networkmanager
+noto-fonts
+ttf-dejavu

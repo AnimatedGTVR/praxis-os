@@ -1,0 +1,13 @@
+#!/bin/sh
+
+set -eu
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+else
+    . /usr/local/lib/praxis/common.sh
+fi
+
+praxis_load_core
+
+praxis_exec_shell

@@ -1,0 +1,57 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+praxis_load_core
+
+STAMP="$(date -u +%Y%m%d-%H%M%S)"
+WORK_DIR="$(mktemp -d)"
+OUT_FILE="${PRAXIS_SUPPORT_OUT:-/tmp/praxis-support-${STAMP}.tar.gz}"
+trap 'rm -rf "${WORK_DIR}"' EXIT INT TERM HUP
+
+{
+    printf 'NAME=%s\n' "${PRAXIS_NAME:-Praxis}"
+    printf 'VERSION=%s\n' "${PRAXIS_VERSION:-0.1.0-dev}"
+    printf 'DATE=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'HOSTNAME=%s\n' "$(hostname 2>/dev/null || printf 'unknown')"
+    printf 'KERNEL=%s\n' "$(uname -r 2>/dev/null || printf 'unknown')"
+    printf 'MACHINE=%s\n' "$(uname -m 2>/dev/null || printf 'unknown')"
+} > "${WORK_DIR}/summary.env"
+
+cat /proc/cmdline > "${WORK_DIR}/cmdline.txt" 2>/dev/null || true
+cat /proc/mounts > "${WORK_DIR}/mounts.txt" 2>/dev/null || true
+cat /etc/praxis-release > "${WORK_DIR}/praxis-release.txt" 2>/dev/null || true
+cat /etc/os-release > "${WORK_DIR}/os-release.txt" 2>/dev/null || true
+lsblk > "${WORK_DIR}/lsblk.txt" 2>/dev/null || true
+blkid > "${WORK_DIR}/blkid.txt" 2>/dev/null || true
+ip -o link show > "${WORK_DIR}/ip-link.txt" 2>/dev/null || true
+ip -o addr show > "${WORK_DIR}/ip-addr.txt" 2>/dev/null || true
+ip route show > "${WORK_DIR}/ip-route.txt" 2>/dev/null || true
+dmesg > "${WORK_DIR}/dmesg.txt" 2>/dev/null || true
+
+if command -v praxis-fetch >/dev/null 2>&1; then
+    praxis-fetch --text > "${WORK_DIR}/praxis-fetch.txt" 2>/dev/null || true
+fi
+
+tar -C "${WORK_DIR}" -czf "${OUT_FILE}" .
+
+printf 'Support bundle written to %s\n' "${OUT_FILE}"

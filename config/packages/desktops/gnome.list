@@ -1,0 +1,13 @@
+# Praxis desktop profile: gnome
+xorg-server
+xorg-xinit
+gnome-shell
+gnome-session
+gnome-control-center
+gnome-terminal
+nautilus
+gdm
+networkmanager
+network-manager-applet
+noto-fonts
+ttf-dejavu

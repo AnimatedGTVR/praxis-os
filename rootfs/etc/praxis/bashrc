@@ -1,0 +1,8 @@
+PS1='praxis# '
+if [[ -z "${PRAXIS_BANNER_SHOWN:-}" && -t 1 ]]; then
+  export PRAXIS_BANNER_SHOWN=1
+  if command -v praxis-banner >/dev/null 2>&1; then
+    praxis-banner
+  fi
+  printf '\nPraxis shell ready. Start with `praxis-help` or `praxis-preflight`, inspect packages with `praxis-packages list`, then install with `praxis-install --hostname praxisbox --desktop xfce /mnt/praxis`.\n'
+fi

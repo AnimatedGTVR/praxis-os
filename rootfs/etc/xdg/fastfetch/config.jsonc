@@ -1,0 +1,52 @@
+{
+    "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+    "logo": {
+        "source": "/usr/share/praxis/branding/fastfetch/praxis.txt"
+    },
+    "display": {
+        "separator": "  ",
+        "key": {
+            "width": 16
+        }
+    },
+    "modules": [
+        {
+            "type": "title",
+            "format": "Praxis"
+        },
+        {
+            "type": "custom",
+            "format": "A base Linux distro you can build on."
+        },
+        {
+            "type": "custom",
+            "format": "Shell-first. Clear. Yours to shape."
+        },
+        "separator",
+        {
+            "type": "os",
+            "format": "{pretty-name} {arch}"
+        },
+        "kernel",
+        "uptime",
+        "shell",
+        "terminal",
+        {
+            "type": "cpu",
+            "format": "{name}"
+        },
+        {
+            "type": "memory",
+            "format": "{used} / {total}"
+        },
+        {
+            "type": "disk",
+            "key": "Disk (/)",
+            "folders": "/",
+            "format": "{size-used} / {size-total}"
+        },
+        "locale",
+        "break",
+        "colors"
+    ]
+}

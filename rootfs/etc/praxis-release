@@ -1,0 +1,4 @@
+NAME=Praxis
+VERSION=0.1.0-dev
+TAGLINE=A base Linux distro you can build on.
+BASE=Independent base distro

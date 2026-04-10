@@ -1,0 +1,135 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+praxis_load_core
+
+DOC_ROOT="${PRAXIS_DOC_ROOT:-/usr/share/doc/praxis}"
+REPO_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/.." 2>/dev/null && pwd || printf '%s\n' "")"
+
+doc_file() {
+    topic="$1"
+
+    if [ -r "${DOC_ROOT}/${topic}" ]; then
+        printf '%s\n' "${DOC_ROOT}/${topic}"
+        return 0
+    fi
+
+    if [ -n "${REPO_ROOT}" ] && [ -r "${REPO_ROOT}/Documentation/${topic}" ]; then
+        printf '%s\n' "${REPO_ROOT}/Documentation/${topic}"
+        return 0
+    fi
+
+    if [ "${topic}" = "README.md" ] && [ -n "${REPO_ROOT}" ] && [ -r "${REPO_ROOT}/README.md" ]; then
+        printf '%s\n' "${REPO_ROOT}/README.md"
+        return 0
+    fi
+
+    return 1
+}
+
+show_doc() {
+    topic="$1"
+    file_path="$(doc_file "${topic}" || true)"
+
+    if [ -z "${file_path}" ]; then
+        printf 'missing Praxis doc: %s\n' "${topic}" >&2
+        exit 1
+    fi
+
+    exec cat "${file_path}"
+}
+
+case "${1:-}" in
+    install)
+        show_doc "INSTALL.md"
+        ;;
+    qemu)
+        show_doc "QEMU.md"
+        ;;
+    commands)
+        show_doc "COMMANDS.md"
+        ;;
+    packages)
+        show_doc "PACKAGES.md"
+        ;;
+    first-boot)
+        show_doc "FIRST-BOOT.md"
+        ;;
+    troubleshooting)
+        show_doc "TROUBLESHOOTING.md"
+        ;;
+    readme)
+        show_doc "README.md"
+        ;;
+    -h|--help)
+        ;;
+    "")
+        ;;
+    *)
+        printf 'unknown topic: %s\n' "${1}" >&2
+        printf '%s\n' "available topics: install, qemu, commands, packages, first-boot, troubleshooting, readme" >&2
+        exit 1
+        ;;
+esac
+
+praxis_header "${PRAXIS_TAGLINE:-A base Linux distro you can build on.}"
+printf '%s\n\n' "${PRAXIS_IDENTITY:-A shell-first Linux distro for people who want a clear system they can shape themselves.}"
+printf '%s\n' "Quick start:"
+printf '%s\n' "- inspect disks with: lsblk"
+printf '%s\n' "- check the live environment with: praxis-preflight"
+printf '%s\n' "- see the current system summary with: praxis-status"
+printf '%s\n' "- browse install profiles with: praxis-packages list"
+printf '%s\n' "- mount your root target at: /mnt/praxis"
+printf '%s\n' "- mount your EFI partition at: /mnt/praxis/boot"
+printf '%s\n' "- install the system with: praxis-install --hostname praxisbox --desktop xfce --bundle internet /mnt/praxis"
+printf '%s\n' "- verify the target with: praxis-target-check /mnt/praxis"
+printf '%s\n' "- for a fast developer copy: praxis-dev-install /mnt/praxis-dev"
+printf '\n'
+printf '%s\n' "Documentation topics:"
+printf '%s\n' "- praxis-help install"
+printf '%s\n' "- praxis-help qemu"
+printf '%s\n' "- praxis-help commands"
+printf '%s\n' "- praxis-help packages"
+printf '%s\n' "- praxis-help first-boot"
+printf '%s\n' "- praxis-help troubleshooting"
+printf '%s\n' "- praxis-help readme"
+printf '\n'
+printf '%s\n' "Local docs:"
+printf '%s\n' "- /usr/share/doc/praxis/README.md"
+printf '%s\n' "- /usr/share/doc/praxis/INSTALL.md"
+printf '%s\n' "- /usr/share/doc/praxis/QEMU.md"
+printf '%s\n' "- /usr/share/doc/praxis/COMMANDS.md"
+printf '%s\n' "- /usr/share/doc/praxis/PACKAGES.md"
+printf '%s\n' "- /usr/share/doc/praxis/FIRST-BOOT.md"
+printf '%s\n' "- /usr/share/doc/praxis/TROUBLESHOOTING.md"
+printf '\n'
+printf '%s\n' "Core live commands:"
+printf '%s\n' "- praxis-fetch"
+printf '%s\n' "- praxis-status"
+printf '%s\n' "- praxis-disk-report"
+printf '%s\n' "- praxis-netcheck"
+printf '%s\n' "- praxis-preflight"
+printf '%s\n' "- praxis-support"
+printf '%s\n' "- praxis-postinstall /mnt/praxis"
+printf '%s\n' "- praxis-packages"
+printf '%s\n' "- praxis-desktop"

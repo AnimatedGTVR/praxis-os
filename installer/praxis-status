@@ -1,0 +1,89 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+praxis_load_core
+
+print_field() {
+    printf '%-14s %s\n' "$1" "$2"
+}
+
+if command -v hostname >/dev/null 2>&1; then
+    PRAXIS_HOSTNAME="$(hostname 2>/dev/null || true)"
+else
+    PRAXIS_HOSTNAME=""
+fi
+[ -n "${PRAXIS_HOSTNAME}" ] || PRAXIS_HOSTNAME="$(sed -n '1p' /etc/hostname 2>/dev/null || printf 'unknown')"
+
+PRAXIS_MODE="installed"
+if grep -q 'praxis.live=1' /proc/cmdline 2>/dev/null; then
+    PRAXIS_MODE="live"
+fi
+
+if [ -r /proc/uptime ]; then
+    PRAXIS_UPTIME_SECONDS="$(awk '{print int($1)}' /proc/uptime)"
+    PRAXIS_UPTIME_HOURS=$((PRAXIS_UPTIME_SECONDS / 3600))
+    PRAXIS_UPTIME_MINUTES=$(((PRAXIS_UPTIME_SECONDS % 3600) / 60))
+    PRAXIS_UPTIME="${PRAXIS_UPTIME_HOURS}h ${PRAXIS_UPTIME_MINUTES}m"
+else
+    PRAXIS_UPTIME="unknown"
+fi
+
+if [ -r /proc/meminfo ]; then
+    PRAXIS_MEM_TOTAL="$(awk '/MemTotal:/ {printf "%.1f GiB", $2 / 1024 / 1024}' /proc/meminfo)"
+    PRAXIS_MEM_AVAIL="$(awk '/MemAvailable:/ {printf "%.1f GiB", $2 / 1024 / 1024}' /proc/meminfo)"
+else
+    PRAXIS_MEM_TOTAL="unknown"
+    PRAXIS_MEM_AVAIL="unknown"
+fi
+
+PRAXIS_DOC_ROOT="${PRAXIS_DOC_ROOT:-/usr/share/doc/praxis}"
+if [ ! -d "${PRAXIS_DOC_ROOT}" ]; then
+    PRAXIS_DOC_ROOT="missing"
+fi
+
+if command -v pacman >/dev/null 2>&1; then
+    PRAXIS_PACKAGE_LAYER="pacman ready"
+else
+    PRAXIS_PACKAGE_LAYER="package layer missing"
+fi
+
+praxis_header "Status"
+print_field "Name" "${PRAXIS_NAME:-Praxis}"
+print_field "Version" "${PRAXIS_VERSION:-0.1.0-dev}"
+print_field "Hostname" "${PRAXIS_HOSTNAME}"
+print_field "Mode" "${PRAXIS_MODE}"
+print_field "Kernel" "$(uname -r 2>/dev/null || printf 'unknown')"
+print_field "Machine" "$(uname -m 2>/dev/null || printf 'unknown')"
+print_field "Uptime" "${PRAXIS_UPTIME}"
+print_field "Memory" "${PRAXIS_MEM_AVAIL} free / ${PRAXIS_MEM_TOTAL} total"
+print_field "Packages" "${PRAXIS_PACKAGE_LAYER}"
+print_field "Docs" "${PRAXIS_DOC_ROOT}"
+printf '\n'
+printf '%s\n' "Useful commands:"
+printf '%s\n' "- praxis-help"
+printf '%s\n' "- praxis-preflight"
+printf '%s\n' "- praxis-disk-report"
+printf '%s\n' "- praxis-netcheck"
+printf '%s\n' "- praxis-support"
+printf '%s\n' "- praxis-packages list"
+printf '%s\n' "- praxis-desktop list"

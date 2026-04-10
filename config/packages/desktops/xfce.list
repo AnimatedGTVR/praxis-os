@@ -1,0 +1,16 @@
+# Praxis desktop profile: xfce
+xorg-server
+xorg-xinit
+xfce4-panel
+xfwm4
+xfdesktop
+thunar
+xfce4-session
+xfce4-settings
+xfce4-terminal
+networkmanager
+network-manager-applet
+lightdm
+lightdm-gtk-greeter
+noto-fonts
+ttf-dejavu

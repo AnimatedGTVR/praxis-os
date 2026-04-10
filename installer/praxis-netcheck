@@ -1,0 +1,55 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+PING_TARGET="${1:-1.1.1.1}"
+
+praxis_header "Network Check"
+printf 'Hostname       %s\n' "$(hostname 2>/dev/null || printf 'unknown')"
+printf '\n'
+
+printf '%s\n' "Interfaces:"
+ip -o link show 2>/dev/null | awk -F': ' '{print " - " $2}' || printf '%s\n' " - unavailable"
+printf '\n'
+
+printf '%s\n' "IPv4 addresses:"
+if ip -o -4 addr show 2>/dev/null | grep -q .; then
+    ip -o -4 addr show 2>/dev/null | awk '{print " - " $2 ": " $4}'
+else
+    printf '%s\n' " - none"
+fi
+printf '\n'
+
+printf '%s\n' "Default route:"
+if ip route show default 2>/dev/null | grep -q .; then
+    ip route show default 2>/dev/null | sed 's/^/ - /'
+else
+    printf '%s\n' " - none"
+fi
+printf '\n'
+
+printf 'Ping test      %s\n' "${PING_TARGET}"
+if ping -c 1 -W 1 "${PING_TARGET}" >/dev/null 2>&1; then
+    printf '%s\n' "Result         reachable"
+else
+    printf '%s\n' "Result         no reply"
+fi

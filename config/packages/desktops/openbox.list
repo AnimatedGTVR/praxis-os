@@ -1,0 +1,13 @@
+# Praxis desktop profile: openbox
+xorg-server
+xorg-xinit
+openbox
+tint2
+pcmanfm
+xterm
+networkmanager
+network-manager-applet
+lightdm
+lightdm-gtk-greeter
+noto-fonts
+ttf-dejavu

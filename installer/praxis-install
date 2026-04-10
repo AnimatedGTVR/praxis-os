@@ -1,0 +1,379 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+SOURCE_ROOT="${PRAXIS_SOURCE_ROOT:-/}"
+TARGET_ROOT=""
+INSTALL_MODE="${PRAXIS_INSTALL_MODE:-standard}"
+INSTALL_ENTRY_NAME="${PRAXIS_INSTALL_ENTRY_NAME:-praxis}"
+INSTALL_TITLE="${PRAXIS_INSTALL_TITLE:-Praxis}"
+INSTALL_OPTIONS="${PRAXIS_INSTALL_OPTIONS:-rdinit=/init praxis.live=0 loglevel=3 console=tty0}"
+TARGET_HOSTNAME="${PRAXIS_TARGET_HOSTNAME:-praxis}"
+INSTALL_DESKTOP="${PRAXIS_INSTALL_DESKTOP:-none}"
+INSTALL_BUNDLES="${PRAXIS_INSTALL_BUNDLES:-}"
+INSTALL_EXTRA_PACKAGES="${PRAXIS_INSTALL_PACKAGES:-}"
+
+usage() {
+    printf '%s\n' "usage: praxis-install [options] <target-root>"
+    printf '%s\n' "options:"
+    printf '%s\n' "  --hostname name        set the installed hostname"
+    printf '%s\n' "  --desktop name         add a desktop profile (gnome, plasma, xfce, budgie, mate, lxqt, i3, openbox)"
+    printf '%s\n' "  --bundle name          add an extra bundle (developer, internet, media, essentials, fonts)"
+    printf '%s\n' "  --packages a,b,c       add extra packages by name"
+    printf '%s\n' "  --list-desktops        show available desktop profiles"
+    printf '%s\n' "  --list-bundles         show available install bundles"
+    printf '%s\n' "example:"
+    printf '%s\n' "  praxis-install --hostname praxisbox --desktop xfce --bundle internet --packages firefox,vlc /mnt/praxis"
+    printf '%s\n' "mount your target root first, then mount the EFI system partition at <target-root>/boot"
+}
+
+require_tool() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        printf 'missing required tool: %s\n' "$1" >&2
+        exit 1
+    fi
+}
+
+append_csv() {
+    current_value="$1"
+    new_value="$2"
+
+    if [ -z "${new_value}" ]; then
+        printf '%s\n' "${current_value}"
+        return 0
+    fi
+
+    if [ -z "${current_value}" ]; then
+        printf '%s\n' "${new_value}"
+        return 0
+    fi
+
+    printf '%s,%s\n' "${current_value}" "${new_value}"
+}
+
+package_helper() {
+    if [ -x /usr/local/bin/praxis-packages ]; then
+        printf '%s\n' /usr/local/bin/praxis-packages
+        return 0
+    fi
+
+    if [ -x "${SCRIPT_DIR}/praxis-packages" ]; then
+        printf '%s\n' "${SCRIPT_DIR}/praxis-packages"
+        return 0
+    fi
+
+    return 1
+}
+
+run_package_helper() {
+    helper_path="$1"
+    shift
+
+    if [ "${helper_path}" = "/usr/local/bin/praxis-packages" ]; then
+        env \
+            PRAXIS_PACKAGE_ROOT="${TARGET_ROOT}/etc/praxis/packages" \
+            "${helper_path}" "$@"
+        return 0
+    fi
+
+    env \
+        PRAXIS_LIB_ROOT="${PRAXIS_LIB_ROOT:-${SCRIPT_DIR}/lib}" \
+        PRAXIS_PACKAGE_ROOT="${TARGET_ROOT}/etc/praxis/packages" \
+        "${helper_path}" "$@"
+}
+
+copy_root_tree() {
+    if [ "${SOURCE_ROOT}" = "/" ]; then
+        TARGET_EXCLUDE=".${TARGET_ROOT}"
+        bsdtar -C "${SOURCE_ROOT}" \
+            --exclude "./proc" \
+            --exclude "./sys" \
+            --exclude "./dev" \
+            --exclude "./run" \
+            --exclude "./tmp" \
+            --exclude "${TARGET_EXCLUDE}" \
+            -cf - . | bsdtar -C "${TARGET_ROOT}" -xf -
+        return 0
+    fi
+
+    bsdtar -C "${SOURCE_ROOT}" \
+        --exclude "./proc" \
+        --exclude "./sys" \
+        --exclude "./dev" \
+        --exclude "./run" \
+        --exclude "./tmp" \
+        -cf - . | bsdtar -C "${TARGET_ROOT}" -xf -
+}
+
+build_target_initramfs() {
+    bsdtar -C "${TARGET_ROOT}" \
+        --format=newc \
+        --exclude "./proc" \
+        --exclude "./sys" \
+        --exclude "./dev" \
+        --exclude "./run" \
+        --exclude "./tmp" \
+        --exclude "./boot/praxis/initramfs.cpio.gz" \
+        -cf - . | gzip -n -9 > "${TARGET_ROOT}/boot/praxis/initramfs.cpio.gz"
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --hostname)
+            shift
+            if [ "$#" -eq 0 ]; then
+                printf '%s\n' "missing hostname after --hostname" >&2
+                usage >&2
+                exit 1
+            fi
+            TARGET_HOSTNAME="$1"
+            ;;
+        --desktop)
+            shift
+            if [ "$#" -eq 0 ]; then
+                printf '%s\n' "missing desktop after --desktop" >&2
+                usage >&2
+                exit 1
+            fi
+            INSTALL_DESKTOP="$1"
+            ;;
+        --bundle)
+            shift
+            if [ "$#" -eq 0 ]; then
+                printf '%s\n' "missing bundle after --bundle" >&2
+                usage >&2
+                exit 1
+            fi
+            INSTALL_BUNDLES="$(append_csv "${INSTALL_BUNDLES}" "$1")"
+            ;;
+        --packages)
+            shift
+            if [ "$#" -eq 0 ]; then
+                printf '%s\n' "missing package list after --packages" >&2
+                usage >&2
+                exit 1
+            fi
+            INSTALL_EXTRA_PACKAGES="$(append_csv "${INSTALL_EXTRA_PACKAGES}" "$1")"
+            ;;
+        --list-desktops)
+            helper_path="$(package_helper || true)"
+            if [ -z "${helper_path}" ]; then
+                printf '%s\n' "could not find praxis-packages" >&2
+                exit 1
+            fi
+            exec "${helper_path}" list desktops
+            ;;
+        --list-bundles)
+            helper_path="$(package_helper || true)"
+            if [ -z "${helper_path}" ]; then
+                printf '%s\n' "could not find praxis-packages" >&2
+                exit 1
+            fi
+            exec "${helper_path}" list bundles
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            if [ -n "${TARGET_ROOT}" ]; then
+                usage >&2
+                exit 1
+            fi
+            TARGET_ROOT="$1"
+            ;;
+    esac
+    shift
+done
+
+if [ -z "${TARGET_ROOT}" ]; then
+    usage >&2
+    exit 1
+fi
+
+if ! praxis_valid_hostname "${TARGET_HOSTNAME}"; then
+    printf 'invalid hostname: %s\n' "${TARGET_HOSTNAME}" >&2
+    printf '%s\n' "use letters, numbers, and hyphens only." >&2
+    exit 1
+fi
+
+if [ "${TARGET_ROOT}" = "/" ] && [ "${PRAXIS_ALLOW_ROOT_INSTALL:-0}" != "1" ]; then
+    printf '%s\n' "refusing to install directly into / without PRAXIS_ALLOW_ROOT_INSTALL=1" >&2
+    exit 1
+fi
+
+require_tool bsdtar
+require_tool gzip
+
+if [ "${PRAXIS_ALLOW_UNMOUNTED_TARGET:-0}" != "1" ] && ! praxis_is_mountpoint "${TARGET_ROOT}"; then
+    printf 'target root is not mounted: %s\n' "${TARGET_ROOT}" >&2
+    printf '%s\n' "mount your target root and mount the EFI system partition at ${TARGET_ROOT}/boot, then run praxis-install again." >&2
+    exit 1
+fi
+
+KERNEL_SOURCE="${PRAXIS_INSTALL_KERNEL:-$SOURCE_ROOT/usr/share/praxis/vmlinuz}"
+LIMINE_SOURCE="${PRAXIS_INSTALL_LIMINE_CONF:-$SOURCE_ROOT/usr/share/praxis/limine.conf}"
+PACKAGE_HELPER="$(package_helper || true)"
+
+if [ ! -f "${KERNEL_SOURCE}" ]; then
+    printf 'missing Praxis kernel payload: %s\n' "${KERNEL_SOURCE}" >&2
+    exit 1
+fi
+
+if [ -n "${INSTALL_DESKTOP}" ] && [ "${INSTALL_DESKTOP}" != "none" ] && [ -z "${PACKAGE_HELPER}" ]; then
+    printf '%s\n' "desktop installs need praxis-packages, but it was not found." >&2
+    exit 1
+fi
+
+if { [ -n "${INSTALL_BUNDLES}" ] || [ -n "${INSTALL_EXTRA_PACKAGES}" ]; } && [ -z "${PACKAGE_HELPER}" ]; then
+    printf '%s\n' "package installs need praxis-packages, but it was not found." >&2
+    exit 1
+fi
+
+mkdir -p "${TARGET_ROOT}"
+mkdir -p "${TARGET_ROOT}/boot/praxis" "${TARGET_ROOT}/etc/praxis"
+
+copy_root_tree
+praxis_write_identity_files "${TARGET_ROOT}" "${TARGET_HOSTNAME}"
+
+if [ -n "${PACKAGE_HELPER}" ] && { [ "${INSTALL_DESKTOP}" != "none" ] || [ -n "${INSTALL_BUNDLES}" ] || [ -n "${INSTALL_EXTRA_PACKAGES}" ]; }; then
+    helper_args="install --target ${TARGET_ROOT}"
+
+    if [ "${INSTALL_DESKTOP}" != "none" ]; then
+        helper_args="${helper_args} --desktop ${INSTALL_DESKTOP}"
+    fi
+
+    if [ -n "${INSTALL_BUNDLES}" ]; then
+        old_ifs="${IFS}"
+        IFS=','
+        set -- ${INSTALL_BUNDLES}
+        IFS="${old_ifs}"
+        for bundle_name in "$@"; do
+            [ -n "${bundle_name}" ] || continue
+            helper_args="${helper_args} --bundle ${bundle_name}"
+        done
+    fi
+
+    if [ -n "${INSTALL_EXTRA_PACKAGES}" ]; then
+        helper_args="${helper_args} --packages ${INSTALL_EXTRA_PACKAGES}"
+    fi
+
+    # shellcheck disable=SC2086
+    run_package_helper "${PACKAGE_HELPER}" ${helper_args}
+fi
+
+build_target_initramfs
+cp "${KERNEL_SOURCE}" "${TARGET_ROOT}/boot/praxis/vmlinuz"
+
+if [ -f "${LIMINE_SOURCE}" ]; then
+    cp "${LIMINE_SOURCE}" "${TARGET_ROOT}/boot/praxis/limine.conf"
+fi
+
+if [ "${PRAXIS_SKIP_FSTAB:-0}" != "1" ]; then
+    praxis_write_fstab "${TARGET_ROOT}"
+fi
+
+praxis_write_loader_conf "${TARGET_ROOT}" "${INSTALL_ENTRY_NAME}"
+
+BOOT_ENTRY_WRITTEN=0
+if praxis_write_systemd_boot_entry "${TARGET_ROOT}" "${INSTALL_ENTRY_NAME}" "${INSTALL_TITLE}" "${INSTALL_OPTIONS}"; then
+    BOOT_ENTRY_WRITTEN=1
+fi
+
+BOOTCTL_INSTALLED=0
+if [ "${PRAXIS_SKIP_BOOTCTL:-0}" != "1" ] && praxis_install_systemd_boot "${TARGET_ROOT}"; then
+    BOOTCTL_INSTALLED=1
+fi
+
+cat > "${TARGET_ROOT}/boot/praxis/README.txt" <<EOF
+Praxis install
+
+Install mode:
+${INSTALL_MODE}
+
+Installed from source root:
+${SOURCE_ROOT}
+
+Hostname:
+${TARGET_HOSTNAME}
+
+Desktop profile:
+${INSTALL_DESKTOP}
+
+Bundle selection:
+${INSTALL_BUNDLES:-none}
+
+Extra packages:
+${INSTALL_EXTRA_PACKAGES:-none}
+
+Boot artifacts:
+- /boot/praxis/vmlinuz
+- /boot/praxis/initramfs.cpio.gz
+- /boot/praxis/limine.conf
+
+Boot entry:
+- /boot/loader/entries/${INSTALL_ENTRY_NAME}.conf
+
+Boot options:
+- ${INSTALL_OPTIONS}
+
+Systemd-boot entry written:
+${BOOT_ENTRY_WRITTEN}
+
+Systemd-boot installed:
+${BOOTCTL_INSTALLED}
+EOF
+
+cat > "${TARGET_ROOT}/etc/praxis/install" <<EOF
+INSTALL_MODE=${INSTALL_MODE}
+INSTALL_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+INSTALL_HOSTNAME=${TARGET_HOSTNAME}
+INSTALL_SOURCE_ROOT=${SOURCE_ROOT}
+INSTALL_KERNEL=/boot/praxis/vmlinuz
+INSTALL_INITRAMFS=/boot/praxis/initramfs.cpio.gz
+INSTALL_ENTRY=${INSTALL_ENTRY_NAME}
+INSTALL_DESKTOP=${INSTALL_DESKTOP}
+INSTALL_BUNDLES=${INSTALL_BUNDLES}
+INSTALL_PACKAGES=${INSTALL_EXTRA_PACKAGES}
+SYSTEMD_BOOT_ENTRY=${BOOT_ENTRY_WRITTEN}
+SYSTEMD_BOOT_INSTALLED=${BOOTCTL_INSTALLED}
+EOF
+
+if [ "${INSTALL_MODE}" = "developer" ]; then
+    cp "${TARGET_ROOT}/etc/praxis/install" "${TARGET_ROOT}/etc/praxis/dev-install"
+fi
+
+sync
+
+printf 'Installed Praxis to %s\n' "${TARGET_ROOT}"
+printf 'Hostname set to %s\n' "${TARGET_HOSTNAME}"
+printf 'Desktop profile: %s\n' "${INSTALL_DESKTOP}"
+printf 'Bundle selection: %s\n' "${INSTALL_BUNDLES:-none}"
+printf 'Extra packages: %s\n' "${INSTALL_EXTRA_PACKAGES:-none}"
+printf 'Boot payload staged in %s\n' "${TARGET_ROOT}/boot/praxis"
+printf 'Boot entry written at %s\n' "${TARGET_ROOT}/boot/loader/entries/${INSTALL_ENTRY_NAME}.conf"
+printf 'Run praxis-target-check %s to verify the target.\n' "${TARGET_ROOT}"
+if [ "${BOOTCTL_INSTALLED}" = "1" ]; then
+    printf 'Systemd-boot installed to %s\n' "${TARGET_ROOT}/boot"
+else
+    printf '%s\n' "Systemd-boot was not installed automatically. Make sure ${TARGET_ROOT}/boot is your mounted EFI system partition."
+fi

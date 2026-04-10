@@ -1,0 +1,14 @@
+# Praxis desktop profile: mate
+xorg-server
+xorg-xinit
+mate-session-manager
+mate-panel
+mate-control-center
+mate-terminal
+caja
+lightdm
+lightdm-gtk-greeter
+networkmanager
+network-manager-applet
+noto-fonts
+ttf-dejavu

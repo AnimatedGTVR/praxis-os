@@ -1,0 +1,35 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -x /usr/local/bin/praxis-install ]; then
+    exec env \
+        PRAXIS_INSTALL_MODE=developer \
+        PRAXIS_ALLOW_UNMOUNTED_TARGET="${PRAXIS_ALLOW_UNMOUNTED_TARGET:-1}" \
+        PRAXIS_INSTALL_ENTRY_NAME=praxis-dev \
+        PRAXIS_INSTALL_TITLE="Praxis Developer" \
+        /usr/local/bin/praxis-install "$@"
+fi
+
+if [ -x "${SCRIPT_DIR}/praxis-install" ]; then
+    exec env \
+        PRAXIS_INSTALL_MODE=developer \
+        PRAXIS_ALLOW_UNMOUNTED_TARGET="${PRAXIS_ALLOW_UNMOUNTED_TARGET:-1}" \
+        PRAXIS_INSTALL_ENTRY_NAME=praxis-dev \
+        PRAXIS_INSTALL_TITLE="Praxis Developer" \
+        "${SCRIPT_DIR}/praxis-install" "$@"
+fi
+
+printf '%s\n' "could not find praxis-install" >&2
+exit 1

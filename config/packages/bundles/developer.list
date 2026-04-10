@@ -1,0 +1,7 @@
+# Praxis bundle: developer
+git
+base-devel
+neovim
+tmux
+ripgrep
+fd
