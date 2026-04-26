@@ -60,8 +60,10 @@ Praxis keeps local docs in the installed system too:
 Useful files:
 
 - `README.md`
+- `DOC.md`
 - `INSTALL.md`
 - `QEMU.md`
 - `COMMANDS.md`
 - `PACKAGES.md`
 - `TROUBLESHOOTING.md`
+- `PAX.md`

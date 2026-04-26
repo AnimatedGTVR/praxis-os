@@ -1,0 +1,97 @@
+#!/bin/sh
+
+set -eu
+
+SHOW_ALL=0
+
+for arg in "$@"; do
+    case "${arg}" in
+        -a|--all)
+            SHOW_ALL=1
+            ;;
+    esac
+done
+
+human_size() {
+    sectors="${1:-0}"
+    awk -v sectors="${sectors}" '
+        BEGIN {
+            bytes = sectors * 512
+            split("B KiB MiB GiB TiB", units, " ")
+            unit = 1
+            while (bytes >= 1024 && unit < 5) {
+                bytes = bytes / 1024
+                unit++
+            }
+            if (unit == 1) {
+                printf "%d%s", bytes, units[unit]
+            } else {
+                printf "%.1f%s", bytes, units[unit]
+            }
+        }'
+}
+
+mountpoint_for() {
+    device="$1"
+    awk -v device="${device}" '$1 == device { print $2; found = 1; exit } END { if (!found) print "" }' /proc/mounts 2>/dev/null
+}
+
+block_type() {
+    block_path="$1"
+
+    if [ -r "${block_path}/device/type" ]; then
+        case "$(cat "${block_path}/device/type" 2>/dev/null || true)" in
+            5) printf '%s\n' "rom"; return 0 ;;
+        esac
+    fi
+
+    if [ -r "${block_path}/partition" ]; then
+        printf '%s\n' "part"
+        return 0
+    fi
+
+    printf '%s\n' "disk"
+}
+
+print_row() {
+    name="$1"
+    block_path="$2"
+    device="/dev/${name}"
+    sectors="0"
+    model=""
+    mountpoint=""
+
+    [ -r "${block_path}/size" ] && sectors="$(cat "${block_path}/size")"
+    [ -r "${block_path}/device/model" ] && model="$(tr -s '[:space:]' ' ' < "${block_path}/device/model" | sed 's/^ //; s/ $//')"
+    mountpoint="$(mountpoint_for "${device}")"
+
+    printf '%-12s %-12s %-8s %-6s %-10s %-10s %-12s %s\n' \
+        "${device}" \
+        "${name}" \
+        "$(human_size "${sectors}")" \
+        "$(block_type "${block_path}")" \
+        "-" \
+        "-" \
+        "${mountpoint:-"-"}" \
+        "${model:-"-"}"
+}
+
+printf '%-12s %-12s %-8s %-6s %-10s %-10s %-12s %s\n' \
+    "PATH" "NAME" "SIZE" "TYPE" "FSTYPE" "LABEL" "MOUNTPOINT" "MODEL"
+
+for block_path in /sys/block/*; do
+    [ -e "${block_path}" ] || continue
+    name="${block_path##*/}"
+    if [ "${SHOW_ALL}" != "1" ]; then
+        case "${name}" in
+            loop*|ram*|zram*) continue ;;
+        esac
+    fi
+    print_row "${name}" "${block_path}"
+
+    for part_path in "${block_path}/${name}"*; do
+        [ -e "${part_path}" ] || continue
+        [ -r "${part_path}/partition" ] || continue
+        print_row "${part_path##*/}" "${part_path}"
+    done
+done

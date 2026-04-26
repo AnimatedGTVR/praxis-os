@@ -23,19 +23,8 @@ praxis_shell() {
     command -v sh
 }
 
-praxis_clear() {
-    printf '\033c'
-}
-
-praxis_pause() {
-    printf '\nPress Enter to continue... '
-    read -r _
-}
-
 praxis_header() {
-    praxis_clear
-    printf 'Praxis\n'
-    printf '%s\n\n' "$1"
+    printf 'Praxis :: %s\n\n' "$1"
 }
 
 praxis_load_core() {
@@ -55,27 +44,6 @@ praxis_valid_hostname() {
     printf '%s\n' "${PRAXIS_HOSTNAME_VALUE}" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$'
 }
 
-praxis_exec_shell() {
-    PRAXIS_SHELL_PATH="$(praxis_shell)"
-    export HOME="${HOME:-/root}"
-    export PATH="/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-    export PS1="${PRAXIS_PS1:-praxis# }"
-
-    case "${PRAXIS_SHELL_PATH##*/}" in
-        bash)
-            if [ -r /etc/praxis/bashrc ]; then
-                exec "${PRAXIS_SHELL_PATH}" --noprofile --rcfile /etc/praxis/bashrc -i
-            fi
-            exec "${PRAXIS_SHELL_PATH}" -i
-            ;;
-        sh)
-            exec "${PRAXIS_SHELL_PATH}" -i
-            ;;
-        *)
-            exec "${PRAXIS_SHELL_PATH}"
-            ;;
-    esac
-}
 
 praxis_is_mountpoint() {
     PRAXIS_MOUNT_TARGET="${1:-}"
@@ -104,11 +72,17 @@ praxis_find_mount_source() {
         return 1
     fi
 
-    if ! command -v findmnt >/dev/null 2>&1; then
-        return 1
+    if command -v findmnt >/dev/null 2>&1; then
+        findmnt -n -o SOURCE --target "${PRAXIS_FIND_TARGET}" 2>/dev/null || true
+        return 0
     fi
 
-    findmnt -n -o SOURCE --target "${PRAXIS_FIND_TARGET}" 2>/dev/null || true
+    if [ -r /proc/mounts ]; then
+        awk -v target="${PRAXIS_FIND_TARGET}" '$2 == target { print $1; found = 1; exit } END { if (!found) exit 1 }' /proc/mounts 2>/dev/null || true
+        return 0
+    fi
+
+    return 1
 }
 
 praxis_find_mount_fstype() {
@@ -118,11 +92,17 @@ praxis_find_mount_fstype() {
         return 1
     fi
 
-    if ! command -v findmnt >/dev/null 2>&1; then
-        return 1
+    if command -v findmnt >/dev/null 2>&1; then
+        findmnt -n -o FSTYPE --target "${PRAXIS_FIND_TARGET}" 2>/dev/null || true
+        return 0
     fi
 
-    findmnt -n -o FSTYPE --target "${PRAXIS_FIND_TARGET}" 2>/dev/null || true
+    if [ -r /proc/mounts ]; then
+        awk -v target="${PRAXIS_FIND_TARGET}" '$2 == target { print $3; found = 1; exit } END { if (!found) exit 1 }' /proc/mounts 2>/dev/null || true
+        return 0
+    fi
+
+    return 1
 }
 
 praxis_fstab_spec() {
@@ -160,12 +140,12 @@ praxis_write_fstab() {
 
     if praxis_is_mountpoint "${PRAXIS_FSTAB_TARGET_ROOT}"; then
         PRAXIS_ROOT_SPEC="$(praxis_fstab_spec "${PRAXIS_FSTAB_TARGET_ROOT}" || true)"
-        PRAXIS_ROOT_TYPE="$(praxis_find_mount_fstype "${PRAXIS_FSTAB_TARGET_ROOT}")"
+        PRAXIS_ROOT_TYPE="$(praxis_find_mount_fstype "${PRAXIS_FSTAB_TARGET_ROOT}" || true)"
     fi
 
     if praxis_is_mountpoint "${PRAXIS_FSTAB_TARGET_ROOT}/boot"; then
         PRAXIS_BOOT_SPEC="$(praxis_fstab_spec "${PRAXIS_FSTAB_TARGET_ROOT}/boot" || true)"
-        PRAXIS_BOOT_TYPE="$(praxis_find_mount_fstype "${PRAXIS_FSTAB_TARGET_ROOT}/boot")"
+        PRAXIS_BOOT_TYPE="$(praxis_find_mount_fstype "${PRAXIS_FSTAB_TARGET_ROOT}/boot" || true)"
     fi
 
     {
@@ -245,6 +225,52 @@ initrd /praxis/initramfs.cpio.gz
 options ${PRAXIS_BOOT_ENTRY_OPTIONS}
 EOF
 
+    return 0
+}
+
+praxis_write_limine_config() {
+    PRAXIS_LIMINE_TARGET_ROOT="${1:-}"
+    PRAXIS_LIMINE_TITLE="${2:-Praxis}"
+    PRAXIS_LIMINE_OPTIONS="${3:-rdinit=/init praxis.live=0 loglevel=3 console=tty0}"
+    PRAXIS_LIMINE_CONFIG="${PRAXIS_LIMINE_TARGET_ROOT}/boot/limine.conf"
+
+    if [ -z "${PRAXIS_LIMINE_TARGET_ROOT}" ]; then
+        return 1
+    fi
+
+    mkdir -p "${PRAXIS_LIMINE_TARGET_ROOT}/boot"
+
+    cat > "${PRAXIS_LIMINE_CONFIG}" <<EOF
+timeout: 0
+serial: yes
+serial_baudrate: 115200
+default_entry: 1
+
+/${PRAXIS_LIMINE_TITLE}
+protocol: linux
+path: boot():/praxis/vmlinuz
+module_path: boot():/praxis/initramfs.cpio.gz
+cmdline: ${PRAXIS_LIMINE_OPTIONS}
+EOF
+
+    return 0
+}
+
+praxis_install_limine_uefi() {
+    PRAXIS_LIMINE_TARGET_ROOT="${1:-}"
+    PRAXIS_LIMINE_SOURCE="${2:-}"
+    PRAXIS_LIMINE_DEST="${PRAXIS_LIMINE_TARGET_ROOT}/boot/EFI/BOOT/BOOTX64.EFI"
+
+    if [ -z "${PRAXIS_LIMINE_TARGET_ROOT}" ] || [ -z "${PRAXIS_LIMINE_SOURCE}" ]; then
+        return 1
+    fi
+
+    if [ ! -r "${PRAXIS_LIMINE_SOURCE}" ]; then
+        return 1
+    fi
+
+    mkdir -p "${PRAXIS_LIMINE_TARGET_ROOT}/boot/EFI/BOOT"
+    cp "${PRAXIS_LIMINE_SOURCE}" "${PRAXIS_LIMINE_DEST}"
     return 0
 }
 

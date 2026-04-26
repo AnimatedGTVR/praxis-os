@@ -4,32 +4,98 @@ set -eu
 
 case "$0" in
     */*)
-        SCRIPT_DIR_PATH="${0%/*}"
+        SCRIPT_DIR="$(CDPATH= cd -- "${0%/*}" && pwd)"
         ;;
     *)
-        SCRIPT_DIR_PATH="."
+        SCRIPT_DIR="."
         ;;
 esac
 
-SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
-
-if [ -x /usr/local/bin/praxis-install ]; then
-    exec env \
-        PRAXIS_INSTALL_MODE=developer \
-        PRAXIS_ALLOW_UNMOUNTED_TARGET="${PRAXIS_ALLOW_UNMOUNTED_TARGET:-1}" \
-        PRAXIS_INSTALL_ENTRY_NAME=praxis-dev \
-        PRAXIS_INSTALL_TITLE="Praxis Developer" \
-        /usr/local/bin/praxis-install "$@"
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
 fi
 
-if [ -x "${SCRIPT_DIR}/praxis-install" ]; then
-    exec env \
-        PRAXIS_INSTALL_MODE=developer \
-        PRAXIS_ALLOW_UNMOUNTED_TARGET="${PRAXIS_ALLOW_UNMOUNTED_TARGET:-1}" \
-        PRAXIS_INSTALL_ENTRY_NAME=praxis-dev \
-        PRAXIS_INSTALL_TITLE="Praxis Developer" \
-        "${SCRIPT_DIR}/praxis-install" "$@"
+find_tool() {
+    if [ -x "/usr/local/bin/$1" ]; then
+        printf '/usr/local/bin/%s\n' "$1"
+        return 0
+    fi
+    if [ -x "${SCRIPT_DIR}/$1" ]; then
+        printf '%s/%s\n' "${SCRIPT_DIR}" "$1"
+        return 0
+    fi
+    printf 'could not find %s\n' "$1" >&2
+    return 1
+}
+
+TARGET_ROOT="${1:-}"
+[ -n "${TARGET_ROOT}" ] || { printf 'usage: praxis-dev-install <target>\n' >&2; exit 1; }
+
+INSTALL="$(find_tool praxis-install)"
+MKINITRD="$(find_tool mkinitrd)"
+
+SOURCE_ROOT="${PRAXIS_SOURCE_ROOT:-/}"
+LIMINE_EFI_SOURCE="${SOURCE_ROOT}/usr/share/praxis/boot/BOOTX64.EFI"
+LIMINE_CONF_SOURCE="${SOURCE_ROOT}/usr/share/praxis/limine.conf"
+
+# Stage 1: deploy rootfs
+env \
+    PRAXIS_ALLOW_UNMOUNTED_TARGET=1 \
+    PRAXIS_SKIP_BOOT_FSTYPE_CHECK=1 \
+    PRAXIS_TARGET_HOSTNAME="${PRAXIS_TARGET_HOSTNAME:-praxis-dev}" \
+    "${INSTALL}" "${TARGET_ROOT}"
+
+# Stage 2: write fstab
+praxis_write_fstab "${TARGET_ROOT}" || true
+
+# Stage 3: build initramfs
+env \
+    PRAXIS_ALLOW_UNMOUNTED_TARGET=1 \
+    PRAXIS_SOURCE_ROOT="${SOURCE_ROOT}" \
+    "${MKINITRD}" "${TARGET_ROOT}"
+
+# Stage 4: write boot entries
+ENTRY_NAME=praxis-dev
+ENTRY_TITLE="Praxis Developer"
+ENTRY_OPTIONS="${PRAXIS_INSTALL_OPTIONS:-rdinit=/init praxis.live=0 loglevel=3 console=tty0}"
+
+praxis_write_loader_conf "${TARGET_ROOT}" "${ENTRY_NAME}"
+praxis_write_systemd_boot_entry "${TARGET_ROOT}" "${ENTRY_NAME}" "${ENTRY_TITLE}" "${ENTRY_OPTIONS}"
+praxis_write_limine_config "${TARGET_ROOT}" "${ENTRY_TITLE}" "${ENTRY_OPTIONS}"
+
+if [ -f "${LIMINE_CONF_SOURCE}" ]; then
+    cp "${LIMINE_CONF_SOURCE}" "${TARGET_ROOT}/boot/praxis/limine.conf" 2>/dev/null || true
 fi
 
-printf '%s\n' "could not find praxis-install" >&2
-exit 1
+if [ -f "${LIMINE_EFI_SOURCE}" ]; then
+    praxis_install_limine_uefi "${TARGET_ROOT}" "${LIMINE_EFI_SOURCE}" || true
+fi
+
+if [ "${PRAXIS_SKIP_BOOTCTL:-1}" != "1" ]; then
+    praxis_install_systemd_boot "${TARGET_ROOT}" || true
+fi
+
+# Write boot README
+cat > "${TARGET_ROOT}/boot/praxis/README.txt" <<EOF
+Praxis developer install
+
+Hostname: ${PRAXIS_TARGET_HOSTNAME:-praxis-dev}
+Entry: ${ENTRY_NAME}
+EOF
+
+# Write install manifest
+cat > "${TARGET_ROOT}/etc/praxis/install" <<EOF
+INSTALL_MODE=developer
+INSTALL_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+INSTALL_HOSTNAME=${PRAXIS_TARGET_HOSTNAME:-praxis-dev}
+INSTALL_SOURCE_ROOT=${SOURCE_ROOT}
+INSTALL_ENTRY=${ENTRY_NAME}
+INSTALL_COMPLETE=1
+EOF
+
+cp "${TARGET_ROOT}/etc/praxis/install" "${TARGET_ROOT}/etc/praxis/dev-install" 2>/dev/null || true
+printf 'dev-install -> %s\n' "${TARGET_ROOT}"

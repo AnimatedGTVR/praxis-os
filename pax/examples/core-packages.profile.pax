@@ -1,0 +1,28 @@
+[.Praxis Config - core-packages profile .praxis.pax./]
+
+# Define a small core software pack for a normal Praxis workstation.
+profile "core-packages"
+{
+    kernel = "linux"
+    busybox = "busybox"
+    browser = "firefox"
+    terminal = "kitty"
+    editor = "neovim"
+    media = "vlc"
+    archive = "file-roller"
+}
+
+# Install the selected packages in a predictable order.
+install package profile.kernel
+install package profile.busybox
+install package profile.browser
+install package profile.terminal
+install package profile.editor
+install package profile.media
+install package profile.archive
+
+# Report when the package profile lands cleanly.
+if install.status == finished
+{
+    print "Core package profile applied."
+}

@@ -11,7 +11,7 @@ install flow, and documentation easy to inspect.
 
 ### Root Filesystem
 
-`rootfs/` contains the base tree that becomes the live initramfs environment. This is where Praxis runtime files, release metadata, and command entrypoints are staged.
+`rootfs/` contains the base tree that becomes the live initramfs environment. This is where Praxis runtime files, release metadata, and command entrypoints are staged. The default rootfs uses the repo-built static BusyBox artifact from `userspace/` for `/bin/sh` and core applets instead of copying host core utilities.
 
 ### Installer Experience
 
@@ -30,7 +30,11 @@ install flow, and documentation easy to inspect.
 
 ### Kernel Ownership
 
-Praxis is an independent distro, so the kernel is considered Praxis-owned. The current build scripts only use the host kernel as a development fallback so the repo can already stage and test images while the dedicated kernel pipeline matures.
+Praxis is an independent distro, so the kernel is considered Praxis-owned. `make kernel` builds an upstream Linux `bzImage` into `kernel/bzImage`, and the normal ISO path depends on that artifact. A host kernel fallback exists only when `PRAXIS_ALLOW_HOST_KERNEL=1` is set explicitly for local development.
+
+### Userspace Ownership
+
+`make userspace` builds an upstream BusyBox release into `userspace/busybox`. `make rootfs` installs that artifact and creates BusyBox applet links by default. Host tools and host metadata are only vendored when `PRAXIS_ALLOW_HOST_TOOLS=1` is set.
 
 ### Verification
 

@@ -67,7 +67,6 @@ else
     PRAXIS_PACKAGE_LAYER="package layer missing"
 fi
 
-praxis_header "Status"
 print_field "Name" "${PRAXIS_NAME:-Praxis}"
 print_field "Version" "${PRAXIS_VERSION:-0.1.0-dev}"
 print_field "Hostname" "${PRAXIS_HOSTNAME}"
@@ -78,12 +77,3 @@ print_field "Uptime" "${PRAXIS_UPTIME}"
 print_field "Memory" "${PRAXIS_MEM_AVAIL} free / ${PRAXIS_MEM_TOTAL} total"
 print_field "Packages" "${PRAXIS_PACKAGE_LAYER}"
 print_field "Docs" "${PRAXIS_DOC_ROOT}"
-printf '\n'
-printf '%s\n' "Useful commands:"
-printf '%s\n' "- praxis-help"
-printf '%s\n' "- praxis-preflight"
-printf '%s\n' "- praxis-disk-report"
-printf '%s\n' "- praxis-netcheck"
-printf '%s\n' "- praxis-support"
-printf '%s\n' "- praxis-packages list"
-printf '%s\n' "- praxis-desktop list"

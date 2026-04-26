@@ -22,31 +22,35 @@ else
 fi
 
 TARGET_ROOT="${1:-}"
-TARGET_HOSTNAME="unknown"
 
-if [ -n "${TARGET_ROOT}" ] && [ -r "${TARGET_ROOT}/etc/hostname" ]; then
-    TARGET_HOSTNAME="$(sed -n '1p' "${TARGET_ROOT}/etc/hostname")"
-    [ -n "${TARGET_HOSTNAME}" ] || TARGET_HOSTNAME="unknown"
+[ -n "${TARGET_ROOT}" ] || { printf 'usage: praxis-postinstall <target>\n' >&2; exit 1; }
+
+STAGE_FILE="${TARGET_ROOT}/etc/praxis/install-stage"
+if [ -r "${STAGE_FILE}" ]; then
+    stage="$(head -n1 "${STAGE_FILE}" 2>/dev/null || true)"
+    printf 'install-stage: %s\n' "${stage:-unknown}"
+else
+    printf 'install-stage: none\n'
 fi
 
-praxis_header "Post-Install"
-printf '%s\n' "Recommended next steps:"
-printf '%s\n' "- run praxis-target-check ${TARGET_ROOT:-/mnt/praxis} before you reboot"
-printf '%s\n' "- confirm the hostname in the target with: cat ${TARGET_ROOT:-/mnt/praxis}/etc/hostname"
-printf '%s\n' "- sync the filesystem before unmounting"
-printf '%s\n' "- unmount the EFI partition first, then the root filesystem"
-printf '%s\n' "- boot the installed disk and run praxis-status"
-printf '%s\n' "- use praxis-netcheck after first boot to confirm networking"
-printf '%s\n' "- if you selected software bundles, inspect them with: cat ${TARGET_ROOT:-/mnt/praxis}/etc/praxis/packages.selected"
-printf '%s\n' "- if you installed a desktop profile, try it later with: praxis-desktop list"
-printf '\n'
-if [ -n "${TARGET_ROOT}" ]; then
-    printf 'Target root     %s\n' "${TARGET_ROOT}"
-    printf 'Target hostname %s\n' "${TARGET_HOSTNAME}"
-    printf '\n'
+if [ -r "${TARGET_ROOT}/etc/hostname" ]; then
+    printf 'hostname: %s\n' "$(head -n1 "${TARGET_ROOT}/etc/hostname")"
 fi
-printf '%s\n' "Useful commands:"
-printf '%s\n' "- sync"
-printf '%s\n' "- umount ${TARGET_ROOT:-/mnt/praxis}/boot"
-printf '%s\n' "- umount ${TARGET_ROOT:-/mnt/praxis}"
-printf '%s\n' "- reboot"
+
+if [ -r "${TARGET_ROOT}/etc/fstab" ]; then
+    printf 'fstab: present\n'
+else
+    printf 'fstab: missing\n'
+fi
+
+if [ -f "${TARGET_ROOT}/boot/praxis/vmlinuz" ]; then
+    printf 'vmlinuz: present\n'
+else
+    printf 'vmlinuz: missing\n'
+fi
+
+if [ -f "${TARGET_ROOT}/boot/praxis/initramfs.cpio.gz" ]; then
+    printf 'initramfs: present\n'
+else
+    printf 'initramfs: missing\n'
+fi

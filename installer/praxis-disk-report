@@ -23,14 +23,34 @@ fi
 
 praxis_header "Disk Report"
 
+INSTALL_DISK_COUNT=0
+FIRST_INSTALL_DISK=""
+
 if command -v lsblk >/dev/null 2>&1; then
     lsblk -o PATH,NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINT,MODEL 2>/dev/null || lsblk
+elif [ -r /proc/partitions ]; then
+    printf '%s\n' "lsblk is not available; showing /proc/partitions."
+    cat /proc/partitions
 else
     printf '%s\n' "lsblk is not available."
 fi
 
-printf '\n'
-printf '%s\n' "Install target convention:"
-printf '%s\n' "- mount the root filesystem at /mnt/praxis"
-printf '%s\n' "- mount the EFI system partition at /mnt/praxis/boot"
-printf '%s\n' "- run praxis-install --hostname praxisbox /mnt/praxis"
+for PRAXIS_BLOCK in /sys/block/*; do
+    [ -e "${PRAXIS_BLOCK}" ] || continue
+    PRAXIS_BLOCK_NAME="${PRAXIS_BLOCK##*/}"
+    case "${PRAXIS_BLOCK_NAME}" in
+        sr*|loop*|ram*|zram*|dm-*) continue ;;
+    esac
+    INSTALL_DISK_COUNT=$((INSTALL_DISK_COUNT + 1))
+    if [ -z "${FIRST_INSTALL_DISK}" ]; then
+        FIRST_INSTALL_DISK="/dev/${PRAXIS_BLOCK_NAME}"
+    fi
+done
+
+if [ "${INSTALL_DISK_COUNT}" -eq 0 ]; then
+    printf '\n'
+    printf '%s\n' "no writable disk detected"
+else
+    printf '\n'
+    printf 'candidate: %s\n' "${FIRST_INSTALL_DISK}"
+fi

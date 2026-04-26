@@ -30,10 +30,13 @@ praxis-help install
 praxis-preflight
 praxis-packages list
 lsblk
+fdisk /dev/vda
+mkfs.vfat -n PRAXISBOOT /dev/vda1
+mke2fs -F -L PRAXISROOT /dev/vda2
 mount /dev/vda2 /mnt/praxis
 mount /dev/vda1 /mnt/praxis/boot
 praxis-fetch
-praxis-install --hostname praxisvm --desktop xfce --bundle internet /mnt/praxis
+praxis-install --hostname praxisvm /mnt/praxis
 praxis-target-check /mnt/praxis
 praxis-postinstall /mnt/praxis
 ```
@@ -70,6 +73,12 @@ The package and desktop profile reference is:
 
 ```text
 /usr/share/doc/praxis/PACKAGES.md
+```
+
+The all-in-one docs file is:
+
+```text
+/usr/share/doc/praxis/DOC.md
 ```
 
 ## Default Disk Artifact

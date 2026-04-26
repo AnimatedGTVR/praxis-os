@@ -3,6 +3,7 @@
 set -eu
 
 export PATH="/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export HOME=/root
 
 mount -t proc proc /proc 2>/dev/null || true
 mount -t sysfs sys /sys 2>/dev/null || true
@@ -12,25 +13,11 @@ mount -t devpts devpts /dev/pts 2>/dev/null || true
 mount -t tmpfs tmpfs /run 2>/dev/null || true
 mount -t tmpfs tmpfs /tmp 2>/dev/null || true
 
-if command -v hostname >/dev/null 2>&1 && [ -r /etc/hostname ]; then
-    if read -r PRAXIS_HOSTNAME < /etc/hostname; then
-        if [ -n "${PRAXIS_HOSTNAME}" ]; then
-            hostname "${PRAXIS_HOSTNAME}" 2>/dev/null || true
-        fi
-    fi
-fi
-
 if [ -c /dev/console ]; then
     exec </dev/console >/dev/console 2>&1
 fi
 
-if [ -x /usr/local/bin/praxis-live ]; then
-    if command -v setsid >/dev/null 2>&1; then
-        exec setsid -c /usr/local/bin/praxis-live
-    fi
-    exec /usr/local/bin/praxis-live
+if command -v setsid >/dev/null 2>&1; then
+    exec setsid -c /bin/sh
 fi
-
-printf '%s\n' "Praxis could not find /usr/local/bin/praxis-live."
-printf '%s\n' "Dropping to an emergency shell."
 exec /bin/sh

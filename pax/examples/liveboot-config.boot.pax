@@ -1,0 +1,22 @@
+[.Praxis Config - liveboot-config boot logic .praxis.pax./]
+
+# Describe how the live boot should behave before the desktop comes up.
+boot "liveboot-config"
+{
+    desktop = gnome
+    hardware_gate = true
+}
+
+# Check the current machine before enabling the live desktop session.
+check hardware
+
+# Block the boot path if the live hardware gate fails.
+if hardware.status == bad
+{
+    print "Boot blocked by hardware gate."
+    stop
+}
+
+# Continue into the selected desktop and request a reboot target.
+enable desktop boot.desktop
+reboot target desktop

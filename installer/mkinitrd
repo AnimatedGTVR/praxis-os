@@ -1,0 +1,74 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR="$(CDPATH= cd -- "${0%/*}" && pwd)"
+        ;;
+    *)
+        SCRIPT_DIR="."
+        ;;
+esac
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+TARGET_ROOT="${1:-}"
+
+[ -n "${TARGET_ROOT}" ] || { printf 'usage: mkinitrd <target>\n' >&2; exit 1; }
+
+STAGE_FILE="${TARGET_ROOT}/etc/praxis/install-stage"
+[ -r "${STAGE_FILE}" ] || { printf 'no stage: run praxis-install first\n' >&2; exit 1; }
+
+stage="$(head -n1 "${STAGE_FILE}" 2>/dev/null || true)"
+[ "${stage}" = "rootfs" ] || { printf 'wrong stage: %s\n' "${stage:-none}" >&2; exit 1; }
+
+[ -r "${TARGET_ROOT}/etc/fstab" ] || { printf 'missing fstab\n' >&2; exit 1; }
+
+if [ "${PRAXIS_ALLOW_UNMOUNTED_TARGET:-0}" != "1" ]; then
+    praxis_is_mountpoint "${TARGET_ROOT}" || { printf 'not mounted: %s\n' "${TARGET_ROOT}" >&2; exit 1; }
+fi
+
+SOURCE_ROOT="${PRAXIS_SOURCE_ROOT:-/}"
+KERNEL_SOURCE="${PRAXIS_INSTALL_KERNEL:-$SOURCE_ROOT/usr/share/praxis/vmlinuz}"
+
+[ -f "${KERNEL_SOURCE}" ] || { printf 'missing kernel: %s\n' "${KERNEL_SOURCE}" >&2; exit 1; }
+command -v gzip >/dev/null 2>&1 || { printf 'missing: gzip\n' >&2; exit 1; }
+
+if ! command -v bsdtar >/dev/null 2>&1 && ! command -v cpio >/dev/null 2>&1; then
+    printf 'missing: cpio\n' >&2; exit 1
+fi
+
+mkdir -p "${TARGET_ROOT}/boot/praxis"
+cp "${KERNEL_SOURCE}" "${TARGET_ROOT}/boot/praxis/vmlinuz"
+
+if command -v bsdtar >/dev/null 2>&1; then
+    bsdtar -C "${TARGET_ROOT}" \
+        --format=newc \
+        --exclude "./proc" --exclude "./sys" --exclude "./dev" \
+        --exclude "./run" --exclude "./tmp" \
+        --exclude "./boot/praxis/initramfs.cpio.gz" \
+        -cf - . | gzip -n -9 > "${TARGET_ROOT}/boot/praxis/initramfs.cpio.gz"
+else
+    (
+        cd "${TARGET_ROOT}"
+        find . \
+            \( -path ./proc -o -path './proc/*' \
+            -o -path ./sys -o -path './sys/*' \
+            -o -path ./dev -o -path './dev/*' \
+            -o -path ./run -o -path './run/*' \
+            -o -path ./tmp -o -path './tmp/*' \
+            -o -path ./boot/praxis/initramfs.cpio.gz \) -prune \
+            -o -print | cpio -o -H newc | gzip -n -9
+    ) > "${TARGET_ROOT}/boot/praxis/initramfs.cpio.gz"
+fi
+
+printf 'initrd\n' > "${TARGET_ROOT}/etc/praxis/install-stage"
+sync
+printf 'initrd -> %s/boot/praxis/\n' "${TARGET_ROOT}"

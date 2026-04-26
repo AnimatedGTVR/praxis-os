@@ -1,0 +1,26 @@
+[.Praxis Config - ricing-desktop profile .praxis.pax./]
+
+# Define a desktop setup meant for theming and ricing work.
+profile "ricing-desktop"
+{
+    desktop = plasma
+    compositor = picom
+    launcher = rofi
+    bar = polybar
+    terminal = kitty
+}
+
+# Install the desktop support tools first.
+install package profile.compositor
+install package profile.launcher
+install package profile.bar
+install package profile.terminal
+
+# Enable the chosen desktop after the supporting tools are ready.
+enable desktop profile.desktop
+
+# Print a final status once the desktop path is active.
+if install.status == finished
+{
+    print "Ricing desktop profile applied."
+}

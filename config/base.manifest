@@ -4,10 +4,12 @@
 
 boot
 kernel
+limine-uefi
 initramfs
 rootfs
 live-shell
 shell-runtime
+busybox-userspace
 installer-cli
 filesystem-tools
 network-tools

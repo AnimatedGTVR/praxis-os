@@ -1,0 +1,30 @@
+[.Praxis Config - core-system-config .praxis.pax./]
+
+# Define a core Praxis system config with desktop and package defaults.
+config "core-system-config"
+{
+    package = "base-devel"
+    desktop = xfce
+    compile_mode = binary
+    hardware_gate = true
+}
+
+# Validate the machine before applying the base system config.
+check hardware
+
+# Stop if the machine does not meet the current Praxis gate.
+if hardware.status == bad
+{
+    print "System config blocked by hardware state."
+    stop
+}
+
+# Apply the base package and desktop choices.
+install package config.package
+enable desktop config.desktop
+
+# Print a final message when the base system config is ready.
+if install.status == finished
+{
+    print "Core Praxis system config applied."
+}

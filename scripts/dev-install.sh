@@ -19,7 +19,4 @@ env \
   PRAXIS_SOURCE_ROOT="$stage_dir" \
   PRAXIS_ALLOW_UNMOUNTED_TARGET="${PRAXIS_ALLOW_UNMOUNTED_TARGET:-1}" \
   PRAXIS_SKIP_BOOTCTL="${PRAXIS_SKIP_BOOTCTL:-1}" \
-  PRAXIS_INSTALL_MODE=developer \
-  PRAXIS_INSTALL_ENTRY_NAME=praxis-dev \
-  PRAXIS_INSTALL_TITLE="Praxis Developer" \
-  "$repo_root/installer/praxis-install" "$target_root"
+  "$repo_root/installer/praxis-dev-install" "$target_root"

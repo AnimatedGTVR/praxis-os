@@ -1,0 +1,30 @@
+[.Praxis Config - packageinstall-config .praxis.pax./]
+
+# Define the install target and the desktop that should be enabled.
+config "packageinstall-config"
+{
+    package = "xfce-base/xfce4-meta"
+    desktop = xfce
+    compile_mode = source
+}
+
+# Probe the current machine before the install actions begin.
+check hardware
+
+# Stop early if the hardware probe reports a failure.
+if hardware.status == bad
+{
+    print "Hardware failed."
+    stop
+}
+
+# Run the install workflow using values from the config block.
+install package config.package
+compile package config.package
+enable desktop config.desktop
+
+# Confirm success after the fake installer reports a finished state.
+if install.status == finished
+{
+    print "[XFCE] Installed!"
+}

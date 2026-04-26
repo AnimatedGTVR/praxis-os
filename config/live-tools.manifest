@@ -1,5 +1,5 @@
 # Commands staged into the live Praxis rootfs.
-# The shell is copied separately to /bin/bash and linked to /bin/sh.
+# BusyBox applets are supplied by the Praxis-built static BusyBox artifact.
 
 mount
 umount

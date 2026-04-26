@@ -18,10 +18,12 @@ pick_kernel_image() {
     return 0
   fi
 
-  local host_kernel="/lib/modules/$(uname -r)/vmlinuz"
-  if [[ -f "$host_kernel" ]]; then
-    printf '%s\n' "$host_kernel"
-    return 0
+  if [[ "${PRAXIS_ALLOW_HOST_KERNEL:-0}" == "1" ]]; then
+    local host_kernel="/lib/modules/$(uname -r)/vmlinuz"
+    if [[ -f "$host_kernel" ]]; then
+      printf '%s\n' "$host_kernel"
+      return 0
+    fi
   fi
 
   return 1
@@ -34,7 +36,7 @@ fi
 
 kernel_image="$(pick_kernel_image || true)"
 if [[ -z "${kernel_image:-}" ]]; then
-  echo "missing kernel image; place one at kernel/bzImage or set KERNEL_IMAGE" >&2
+  echo "missing kernel image; run make kernel, place one at kernel/bzImage, or set KERNEL_IMAGE" >&2
   exit 1
 fi
 
@@ -45,7 +47,7 @@ cp "$kernel_image" "$iso_stage/vmlinuz"
 cp "$initramfs_path" "$iso_stage/initramfs.cpio.gz"
 cp "$repo_root/boot/limine.conf" "$iso_stage/limine.conf"
 
-if [[ "$kernel_image" == "/lib/modules/$(uname -r)/vmlinuz" ]]; then
+if [[ "${PRAXIS_ALLOW_HOST_KERNEL:-0}" == "1" && "$kernel_image" == "/lib/modules/$(uname -r)/vmlinuz" ]]; then
   printf 'Using host kernel fallback: %s\n' "$kernel_image"
 fi
 

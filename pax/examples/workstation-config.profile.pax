@@ -1,0 +1,22 @@
+[.Praxis Config - workstation-config profile .praxis.pax./]
+
+# Bundle together a desktop and a small workstation software set.
+profile "workstation-config"
+{
+    desktop = plasma
+    browser = "firefox"
+    editor = "neovim"
+    media = "vlc"
+}
+
+# Apply the profile by installing each selected package.
+install package profile.browser
+install package profile.editor
+install package profile.media
+enable desktop profile.desktop
+
+# Report when the profile has finished applying.
+if install.status == finished
+{
+    print "Workstation profile applied."
+}

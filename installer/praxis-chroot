@@ -1,0 +1,30 @@
+#!/bin/sh
+
+set -eu
+
+TARGET="${1:-}"
+[ -n "${TARGET}" ] || { printf 'usage: praxis-chroot <target>\n' >&2; exit 1; }
+[ -d "${TARGET}" ] || { printf 'not a directory: %s\n' "${TARGET}" >&2; exit 1; }
+
+STAGE_FILE="${TARGET}/etc/praxis/install-stage"
+[ -r "${STAGE_FILE}" ] || { printf 'no stage: run mkinitrd first\n' >&2; exit 1; }
+stage="$(head -n1 "${STAGE_FILE}" 2>/dev/null || true)"
+[ "${stage}" = "initrd" ] || { printf 'wrong stage: %s\n' "${stage:-none}" >&2; exit 1; }
+
+mount --bind /proc "${TARGET}/proc"
+mount --bind /sys "${TARGET}/sys"
+mount --bind /dev "${TARGET}/dev"
+mount --bind /dev/pts "${TARGET}/dev/pts" 2>/dev/null || true
+mount --bind /run "${TARGET}/run" 2>/dev/null || true
+
+cleanup() {
+    umount "${TARGET}/run" 2>/dev/null || true
+    umount "${TARGET}/dev/pts" 2>/dev/null || true
+    umount "${TARGET}/dev" 2>/dev/null || true
+    umount "${TARGET}/sys" 2>/dev/null || true
+    umount "${TARGET}/proc" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+chroot "${TARGET}" /bin/sh
+printf 'chroot\n' > "${STAGE_FILE}"

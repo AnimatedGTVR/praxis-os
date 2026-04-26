@@ -1,0 +1,19 @@
+[.Praxis Config - source-pkg package definition .praxis.pax./]
+
+# Define a package that should be built through the Praxis source-pkg flow.
+package "source-pkg"
+{
+    source = "mesa-git"
+    compile = true
+    compile_mode = source
+    optimize = true
+}
+
+# Simulate the source build path for the selected package.
+compile package package.source
+
+# Confirm that the source compile stage completed.
+if compile.status == finished
+{
+    print "source-pkg profile compiled."
+}

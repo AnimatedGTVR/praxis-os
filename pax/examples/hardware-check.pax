@@ -1,0 +1,14 @@
+[.Praxis Config - hardware-check validation .praxis.pax./]
+
+# Run the basic hardware probe before any install or boot action.
+check hardware
+
+# Stop immediately if the machine fails the simulated hardware gate.
+if hardware.status == bad
+{
+    print "Hardware validation failed."
+    stop
+}
+
+# Confirm the machine is ready for the next Praxis action.
+print "Hardware validation passed."
