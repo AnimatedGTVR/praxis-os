@@ -1,6 +1,7 @@
 # Praxis desktop profile: budgie
 xorg-server
 xorg-xinit
+dbus
 budgie-desktop
 gnome-terminal
 nautilus

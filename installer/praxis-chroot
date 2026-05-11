@@ -11,6 +11,8 @@ STAGE_FILE="${TARGET}/etc/praxis/install-stage"
 stage="$(head -n1 "${STAGE_FILE}" 2>/dev/null || true)"
 [ "${stage}" = "initrd" ] || { printf 'wrong stage: %s\n' "${stage:-none}" >&2; exit 1; }
 
+mkdir -p "${TARGET}/proc" "${TARGET}/sys" "${TARGET}/dev/pts" "${TARGET}/run"
+
 mount --bind /proc "${TARGET}/proc"
 mount --bind /sys "${TARGET}/sys"
 mount --bind /dev "${TARGET}/dev"
@@ -26,5 +28,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-chroot "${TARGET}" /bin/sh
+set +e
+env -i \
+    PATH="/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    HOME=/root \
+    TERM="${TERM:-linux}" \
+    chroot "${TARGET}" /bin/sh
+set -e
 printf 'chroot\n' > "${STAGE_FILE}"

@@ -14,6 +14,8 @@ bash -n "$repo_root/scripts/build-iso.sh"
 bash -n "$repo_root/scripts/check-rootfs-owned.sh"
 bash -n "$repo_root/scripts/check-pax.sh"
 bash -n "$repo_root/scripts/create-qemu-disk.sh"
+bash -n "$repo_root/scripts/qemu-chroot.sh"
+bash -n "$repo_root/scripts/repair-qemu-esp.sh"
 bash -n "$repo_root/scripts/dev-install.sh"
 bash -n "$repo_root/scripts/run-qemu-installed.sh"
 bash -n "$repo_root/scripts/run-qemu.sh"
@@ -112,7 +114,12 @@ env \
   PRAXIS_ALLOW_UNMOUNTED_TARGET=1 \
   PRAXIS_SKIP_BOOT_FSTYPE_CHECK=1 \
   "$repo_root/installer/praxis-install" --hostname praxistest "$tmpdir/live-root" >/dev/null
-printf '# stub fstab\nUUID=deadbeef / ext4 defaults 0 1\n' > "$tmpdir/live-root/etc/fstab"
+printf '# stub fstab\nUUID=deadbeef / ext4 defaults 0 1\nUUID=feedface /boot vfat defaults 0 2\n' > "$tmpdir/live-root/etc/fstab"
+cat > "$tmpdir/live-root/etc/praxis/initramfs.conf" <<EOF
+INITRAMFS_FORMAT=newc
+INITRAMFS_COMPRESSION=gzip
+INITRAMFS_OWNER=manual
+EOF
 env \
   PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
   PRAXIS_SOURCE_ROOT="$tmpdir/rootfs" \
@@ -120,11 +127,14 @@ env \
   "$repo_root/installer/mkinitrd" "$tmpdir/live-root" >/dev/null
 mkdir -p "$tmpdir/live-root/boot/loader/entries" "$tmpdir/live-root/boot/EFI/BOOT"
 printf 'default praxis\ntimeout 4\n' > "$tmpdir/live-root/boot/loader/loader.conf"
-printf 'title   Praxis\nlinux   /praxis/vmlinuz\ninitrd  /praxis/initramfs.cpio.gz\noptions rdinit=/init\n' \
+printf 'title   Praxis\nlinux   /praxis/vmlinuz\ninitrd  /praxis/initramfs.cpio.gz\noptions root=UUID=deadbeef rdinit=/init praxis.live=0\n' \
   > "$tmpdir/live-root/boot/loader/entries/praxis.conf"
 printf '# stub\n' > "$tmpdir/live-root/boot/limine.conf"
 cp "$tmpdir/rootfs/usr/share/praxis/boot/BOOTX64.EFI" "$tmpdir/live-root/boot/EFI/BOOT/BOOTX64.EFI"
 printf 'chroot\n' > "$tmpdir/live-root/etc/praxis/install-stage"
+ln -sf /usr/share/zoneinfo/UTC "$tmpdir/live-root/etc/localtime"
+printf 'LANG=en_US.UTF-8\n' > "$tmpdir/live-root/etc/locale.conf"
+printf '00000000000040008000000000000003\n' > "$tmpdir/live-root/etc/machine-id"
 env \
   PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
   "$repo_root/installer/targetcheck" "$tmpdir/live-root" >/dev/null

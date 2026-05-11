@@ -33,7 +33,7 @@ desktop_command() {
             printf '%s\n' "startxfce4"
             ;;
         budgie)
-            printf '%s\n' "budgie-desktop"
+            printf '%s\n' "startbudgielabwc"
             ;;
         mate)
             printf '%s\n' "mate-session"
@@ -86,14 +86,29 @@ case "${1:-list}" in
         fi
 
         if ! command -v startx >/dev/null 2>&1; then
-            printf '%s\n' "missing required command: startx" >&2
-            printf '%s\n' "Install a desktop profile first with praxis-packages or praxis-install." >&2
-            exit 1
+            if [ "${desktop_name}" != "budgie" ]; then
+                printf '%s\n' "missing required command: startx" >&2
+                printf '%s\n' "Install a desktop profile first with praxis-packages or praxis-install." >&2
+                exit 1
+            fi
         fi
 
         if ! command -v "${command_name}" >/dev/null 2>&1; then
             printf 'desktop command not found: %s\n' "${command_name}" >&2
             exit 1
+        fi
+
+        if [ "${desktop_name}" = "budgie" ]; then
+            export USER="${USER:-root}"
+            export LOGNAME="${LOGNAME:-${USER}}"
+            export HOME="${HOME:-/root}"
+            export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/root}"
+            export XDG_CURRENT_DESKTOP=Budgie
+            export XDG_SESSION_DESKTOP=budgie-desktop
+            export DESKTOP_SESSION=budgie-desktop
+            mkdir -p "${XDG_RUNTIME_DIR}"
+            chmod 700 "${XDG_RUNTIME_DIR}"
+            exec "${command_name}"
         fi
 
         session_file="$(mktemp)"

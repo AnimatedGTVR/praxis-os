@@ -57,6 +57,9 @@ make help
 make iso
 make qemu
 make qemu-install
+make qemu-chroot
+make qemu-full DESKTOP=xfce
+make qemu-full-xfce
 make qemu-installed
 make smoke
 make check
@@ -67,6 +70,9 @@ What they do:
 - `make iso` builds `build/praxis.iso`
 - `make qemu` boots the live ISO in QEMU
 - `make qemu-install` boots the ISO with a writable VM disk attached
+- `make qemu-chroot` stages the QEMU disk and enters `praxis-chroot`
+- `make qemu-full DESKTOP=xfce` stages and boots a desktop QEMU target
+- `make qemu-full-xfce` is shorthand for the XFCE desktop target
 - `make qemu-installed` boots the installed VM disk with UEFI firmware
 - `make smoke` runs a headless boot and waits for the `praxis#` prompt
 - `make check` validates shell syntax and rootfs staging
@@ -120,7 +126,7 @@ The live toolkit is meant to help you inspect the system before you write it.
 ## Installing Praxis
 
 Praxis does not partition disks for you. You choose the layout, mount the
-target, and then run the install command.
+target, write the fstab, configure the target, and write the boot entries.
 
 From the live shell, a common starting flow is:
 
@@ -165,61 +171,111 @@ praxis-packages show desktop xfce
 praxis-packages show bundle developer
 ```
 
-### Install Praxis
+### Stage 1: Deploy Rootfs
 
-Base example:
-
-```bash
-praxis-install --hostname praxisbox --desktop xfce --bundle internet /mnt/praxis
-```
-
-More complete example:
+Run the install command after the root and EFI partitions are mounted:
 
 ```bash
-praxis-install \
-  --hostname praxisbox \
-  --desktop xfce \
-  --bundle essentials \
-  --bundle developer \
-  --packages firefox,vlc \
-  /mnt/praxis
+praxis-install --hostname praxisbox /mnt/praxis
 ```
 
-Current desktop profiles:
+### Write fstab
 
-- `gnome`
-- `plasma`
-- `xfce`
-- `budgie`
-- `mate`
-- `lxqt`
-- `i3`
-- `openbox`
+Get UUIDs:
 
-Current bundles:
+```bash
+blkid
+```
 
-- `developer`
-- `internet`
-- `media`
-- `essentials`
-- `fonts`
+Write `/mnt/praxis/etc/fstab` yourself. UUID mounts are required for both `/`
+and `/boot`:
+
+```text
+UUID=<root-uuid>  /      ext4  defaults  0  1
+UUID=<boot-uuid>  /boot  vfat  defaults  0  2
+```
+
+### Write Initramfs Policy
+
+Write `/mnt/praxis/etc/praxis/initramfs.conf` yourself:
+
+```text
+INITRAMFS_FORMAT=newc
+INITRAMFS_COMPRESSION=gzip
+INITRAMFS_OWNER=manual
+INITRAMFS_ROOT=disk
+```
+
+The initramfs builder refuses to continue without this explicit policy. The
+`disk` root mode keeps installed desktops on the real root partition instead of
+packing them into `/boot`.
+
+### Stage 2: Build Initramfs
+
+```bash
+mkinitrd /mnt/praxis
+```
+
+This refuses to run unless the target fstab mounts both `/` and `/boot` by UUID.
+
+### Stage 3: Configure Target
+
+```bash
+praxis-chroot /mnt/praxis
+```
+
+Inside the chroot, do at minimum:
+
+```sh
+passwd
+ln -sf /usr/share/zoneinfo/Region/City /etc/localtime
+printf 'LANG=en_US.UTF-8\n' > /etc/locale.conf
+head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n' > /etc/machine-id
+exit
+```
+
+`targetcheck` fails if the chroot stage, localtime, locale configuration, or
+machine-id is missing.
+
+### Write Boot Entries
+
+Create the loader paths:
+
+```bash
+mkdir -p /mnt/praxis/boot/loader/entries
+```
+
+Write `/mnt/praxis/boot/loader/loader.conf`:
+
+```text
+default praxis
+timeout 4
+```
+
+Write `/mnt/praxis/boot/loader/entries/praxis.conf`:
+
+```text
+title   Praxis
+linux   /praxis/vmlinuz
+initrd  /praxis/initramfs.cpio.gz
+options root=UUID=<root-uuid> rdinit=/init praxis.live=0 loglevel=3
+```
+
+The boot entry must include `root=UUID=...`, `rdinit=/init`, and
+`praxis.live=0`. The root UUID must exactly match the `/` UUID in fstab.
 
 ### What Praxis Writes
 
-The install writes:
+The staged install writes:
 
 - `/mnt/praxis/boot/praxis/vmlinuz`
 - `/mnt/praxis/boot/praxis/initramfs.cpio.gz`
-- `/mnt/praxis/boot/loader/entries/praxis.conf`
-- `/mnt/praxis/etc/fstab`
 - `/mnt/praxis/etc/praxis/install`
 - `/mnt/praxis/etc/hostname`
 - `/mnt/praxis/etc/hosts`
-- `/mnt/praxis/boot/loader/loader.conf`
-- `/mnt/praxis/boot/praxis/README.txt`
 
-If `bootctl` is available and the EFI system partition is mounted correctly,
-Praxis also attempts a systemd-boot install.
+You write `/mnt/praxis/etc/fstab`, `/mnt/praxis/boot/loader/loader.conf`, the
+loader entry, and the EFI bootloader setup yourself.
 
 ### Verify the Target
 
@@ -424,8 +480,9 @@ Mount the root at `/mnt/praxis` and the EFI system partition at
 praxis-target-check /mnt/praxis
 ```
 
-That checks the kernel, initramfs, loader entry, hostname, fstab, and install
-metadata.
+That checks the kernel, initramfs, initramfs policy, loader entry, hostname,
+UUID fstab, root UUID consistency, localtime, locale config, machine-id, boot
+options, and install metadata.
 
 ### Package Or Desktop Install Fails
 

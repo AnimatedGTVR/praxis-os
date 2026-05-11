@@ -77,6 +77,10 @@ LOADER_CONF_FILE="${TARGET_ROOT}/boot/loader/loader.conf"
 LOADER_DEFAULT="unknown"
 ENTRY_LINUX="unknown"
 ENTRY_INITRD="unknown"
+ENTRY_OPTIONS="unknown"
+FSTAB_ROOT_UUID="unknown"
+FSTAB_BOOT_UUID="unknown"
+ENTRY_ROOT_UUID="unknown"
 STATUS=0
 WARNINGS=0
 PARTIAL_INSTALL=0
@@ -164,7 +168,23 @@ if [ -n "${ENTRY_FILE}" ] && [ -r "${ENTRY_FILE}" ]; then
     [ -n "${ENTRY_LINUX}" ] || ENTRY_LINUX="unknown"
     ENTRY_INITRD="$(sed -n 's/^initrd[[:space:]]\+//p' "${ENTRY_FILE}" | sed -n '1p')"
     [ -n "${ENTRY_INITRD}" ] || ENTRY_INITRD="unknown"
+    ENTRY_OPTIONS="$(sed -n 's/^options[[:space:]]\+//p' "${ENTRY_FILE}" | sed -n '1p')"
+    [ -n "${ENTRY_OPTIONS}" ] || ENTRY_OPTIONS="unknown"
 fi
+
+if [ -r "${TARGET_ROOT}/etc/fstab" ]; then
+    FSTAB_ROOT_UUID="$(sed -n 's/^[[:space:]]*UUID=\([^[:space:]]*\)[[:space:]]\+\/[[:space:]].*/\1/p' "${TARGET_ROOT}/etc/fstab" | sed -n '1p')"
+    [ -n "${FSTAB_ROOT_UUID}" ] || FSTAB_ROOT_UUID="unknown"
+    FSTAB_BOOT_UUID="$(sed -n 's/^[[:space:]]*UUID=\([^[:space:]]*\)[[:space:]]\+\/boot[[:space:]].*/\1/p' "${TARGET_ROOT}/etc/fstab" | sed -n '1p')"
+    [ -n "${FSTAB_BOOT_UUID}" ] || FSTAB_BOOT_UUID="unknown"
+fi
+
+case "${ENTRY_OPTIONS}" in
+    *root=UUID=*)
+        ENTRY_ROOT_UUID="$(printf '%s\n' "${ENTRY_OPTIONS}" | sed -n 's/.*root=UUID=\([^[:space:]]*\).*/\1/p')"
+        [ -n "${ENTRY_ROOT_UUID}" ] || ENTRY_ROOT_UUID="unknown"
+        ;;
+esac
 
 if [ "${TARGET_HOSTNAME}" = "unknown" ] && [ -r "${TARGET_ROOT}/etc/hostname" ]; then
     TARGET_HOSTNAME="$(sed -n '1p' "${TARGET_ROOT}/etc/hostname")"
@@ -225,6 +245,17 @@ else
     STATUS=1
 fi
 
+if [ -n "${ENTRY_FILE}" ]; then
+    ENTRY_NAME="${ENTRY_FILE##*/}"
+    ENTRY_NAME="${ENTRY_NAME%.conf}"
+    if [ "${LOADER_DEFAULT}" = "${ENTRY_NAME}" ]; then
+        print_field "Default matches" "yes"
+    else
+        print_field "Default matches" "no: ${LOADER_DEFAULT}"
+        STATUS=1
+    fi
+fi
+
 if [ "${ENTRY_LINUX}" = "/praxis/vmlinuz" ]; then
     print_field "Entry linux" "${ENTRY_LINUX}"
 elif [ -n "${ENTRY_FILE}" ]; then
@@ -239,6 +270,28 @@ elif [ -n "${ENTRY_FILE}" ]; then
     STATUS=1
 fi
 
+case "${ENTRY_OPTIONS}" in
+    *"root=UUID="*) print_field "Entry root" "UUID" ;;
+    *) print_field "Entry root" "missing root=UUID"; STATUS=1 ;;
+esac
+
+if [ "${FSTAB_ROOT_UUID}" != "unknown" ] && [ "${ENTRY_ROOT_UUID}" = "${FSTAB_ROOT_UUID}" ]; then
+    print_field "Root UUID match" "yes"
+else
+    print_field "Root UUID match" "no"
+    STATUS=1
+fi
+
+case "${ENTRY_OPTIONS}" in
+    *"rdinit=/init"*) print_field "Entry rdinit" "present" ;;
+    *) print_field "Entry rdinit" "missing"; STATUS=1 ;;
+esac
+
+case "${ENTRY_OPTIONS}" in
+    *"praxis.live=0"*) print_field "Entry live mode" "installed" ;;
+    *) print_field "Entry live mode" "missing praxis.live=0"; STATUS=1 ;;
+esac
+
 if [ "${INSTALL_STAGE}" = "chroot" ]; then
     print_field "Chroot done" "yes"
 else
@@ -248,8 +301,51 @@ fi
 
 if [ -f "${TARGET_ROOT}/etc/fstab" ]; then
     print_field "fstab" "present"
+    if grep -Eq '^[[:space:]]*UUID=[^[:space:]]+[[:space:]]+/[[:space:]]+' "${TARGET_ROOT}/etc/fstab"; then
+        print_field "fstab root" "UUID"
+    else
+        print_field "fstab root" "missing UUID"
+        STATUS=1
+    fi
+    if grep -Eq '^[[:space:]]*UUID=[^[:space:]]+[[:space:]]+/boot[[:space:]]+' "${TARGET_ROOT}/etc/fstab"; then
+        print_field "fstab boot" "UUID"
+    else
+        print_field "fstab boot" "missing UUID"
+        STATUS=1
+    fi
 else
     print_field "fstab" "missing"
+    STATUS=1
+fi
+
+if [ -f "${TARGET_ROOT}/etc/praxis/initramfs.conf" ]; then
+    print_field "Initramfs conf" "present"
+    if grep -Eq '^INITRAMFS_FORMAT=newc$' "${TARGET_ROOT}/etc/praxis/initramfs.conf"; then
+        print_field "Initramfs format" "newc"
+    else
+        print_field "Initramfs format" "missing newc"
+        STATUS=1
+    fi
+    if grep -Eq '^INITRAMFS_COMPRESSION=gzip$' "${TARGET_ROOT}/etc/praxis/initramfs.conf"; then
+        print_field "Initramfs comp" "gzip"
+    else
+        print_field "Initramfs comp" "missing gzip"
+        STATUS=1
+    fi
+    if grep -Eq '^INITRAMFS_OWNER=manual$' "${TARGET_ROOT}/etc/praxis/initramfs.conf"; then
+        print_field "Initramfs owner" "manual"
+    else
+        print_field "Initramfs owner" "missing manual"
+        STATUS=1
+    fi
+    INITRAMFS_ROOT="$(sed -n 's/^INITRAMFS_ROOT=//p' "${TARGET_ROOT}/etc/praxis/initramfs.conf" | sed -n '1p')"
+    [ -n "${INITRAMFS_ROOT}" ] || INITRAMFS_ROOT="target"
+    case "${INITRAMFS_ROOT}" in
+        target|disk) print_field "Initramfs root" "${INITRAMFS_ROOT}" ;;
+        *) print_field "Initramfs root" "invalid: ${INITRAMFS_ROOT}"; STATUS=1 ;;
+    esac
+else
+    print_field "Initramfs conf" "missing"
     STATUS=1
 fi
 
@@ -257,14 +353,21 @@ if [ -e "${TARGET_ROOT}/etc/localtime" ]; then
     print_field "localtime" "present"
 else
     print_field "localtime" "missing"
-    WARNINGS=$((WARNINGS + 1))
+    STATUS=1
 fi
 
 if [ -f "${TARGET_ROOT}/etc/locale.conf" ]; then
     print_field "locale.conf" "present"
 else
     print_field "locale.conf" "missing"
-    WARNINGS=$((WARNINGS + 1))
+    STATUS=1
+fi
+
+if [ -r "${TARGET_ROOT}/etc/machine-id" ] && grep -Eq '^[0-9a-f]{32}$' "${TARGET_ROOT}/etc/machine-id"; then
+    print_field "machine-id" "present"
+else
+    print_field "machine-id" "missing/invalid"
+    STATUS=1
 fi
 
 if [ -r "${TARGET_ROOT}/etc/hostname" ]; then

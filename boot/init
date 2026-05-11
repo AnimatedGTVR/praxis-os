@@ -13,8 +13,75 @@ mount -t devpts devpts /dev/pts 2>/dev/null || true
 mount -t tmpfs tmpfs /run 2>/dev/null || true
 mount -t tmpfs tmpfs /tmp 2>/dev/null || true
 
+DESKTOP_LOG=/tmp/praxis-desktop.log
+
+desktop_name() {
+    sed -n 's/^DESKTOP=//p' /etc/praxis/desktop-session 2>/dev/null | sed -n '1p'
+}
+
+setup_desktop_environment() {
+    export USER=root
+    export LOGNAME=root
+    export HOME=/root
+    export XDG_RUNTIME_DIR=/run/root
+    mkdir -p /run/root
+    chmod 700 /run/root
+    cd /root 2>/dev/null || true
+}
+
+if grep -qw 'praxis.live=0' /proc/cmdline 2>/dev/null &&
+    [ ! -r /etc/praxis/install ]; then
+    ROOT_SPEC="$(sed -n 's/.*root=\([^ ]*\).*/\1/p' /proc/cmdline)"
+    ROOT_DEV=""
+
+    if [ -n "${ROOT_SPEC}" ]; then
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            ROOT_DEV="$(findfs "${ROOT_SPEC}" 2>/dev/null || true)"
+            [ -n "${ROOT_DEV}" ] && break
+            sleep 1
+        done
+    fi
+
+    if [ -n "${ROOT_DEV}" ]; then
+        mkdir -p /newroot
+        if mount "${ROOT_DEV}" /newroot; then
+            mkdir -p /newroot/proc /newroot/sys /newroot/dev /newroot/run
+            exec switch_root /newroot /init
+        fi
+    fi
+
+    printf 'Praxis: could not mount installed root: %s\n' "${ROOT_SPEC:-missing}" >&2
+fi
+
 if [ -c /dev/console ]; then
     exec </dev/console >/dev/console 2>&1
+fi
+
+if grep -qw 'praxis.live=0' /proc/cmdline 2>/dev/null; then
+    if [ ! -r /etc/praxis/desktop-session ]; then
+        printf 'Praxis: desktop autostart not configured: /etc/praxis/desktop-session missing\n' > "${DESKTOP_LOG}"
+    elif [ "$(desktop_name)" = "budgie" ]; then
+        if ! command -v startbudgielabwc >/dev/null 2>&1; then
+            printf 'Praxis: Budgie autostart not available: startbudgielabwc missing\n' > "${DESKTOP_LOG}"
+        else
+            setup_desktop_environment
+            export XDG_CURRENT_DESKTOP=Budgie
+            export XDG_SESSION_DESKTOP=budgie-desktop
+            export DESKTOP_SESSION=budgie-desktop
+            printf 'Praxis: starting Budgie Wayland session\n' > "${DESKTOP_LOG}"
+            startbudgielabwc >> "${DESKTOP_LOG}" 2>&1 || true
+            printf 'Praxis: Budgie session exited, falling back to shell\n' >> "${DESKTOP_LOG}"
+        fi
+    elif ! command -v startx >/dev/null 2>&1; then
+        printf 'Praxis: desktop autostart not available: startx missing\n' > "${DESKTOP_LOG}"
+    elif [ ! -x /root/.xinitrc ]; then
+        printf 'Praxis: desktop autostart not available: /root/.xinitrc missing or not executable\n' > "${DESKTOP_LOG}"
+    else
+        setup_desktop_environment
+        printf 'Praxis: starting desktop session\n' > "${DESKTOP_LOG}"
+        startx /root/.xinitrc -- :0 vt1 >> "${DESKTOP_LOG}" 2>&1 || true
+        printf 'Praxis: desktop session exited, falling back to shell\n' >> "${DESKTOP_LOG}"
+    fi
 fi
 
 if command -v setsid >/dev/null 2>&1; then

@@ -62,14 +62,32 @@ Get UUIDs:
 blkid
 ```
 
-Write `/mnt/praxis/etc/fstab` yourself. Minimum:
+Write `/mnt/praxis/etc/fstab` yourself. Device paths and labels are not enough;
+Praxis requires UUID mounts for both `/` and `/boot`.
 
 ```text
 UUID=<root-uuid>  /      ext4  defaults  0  1
 UUID=<boot-uuid>  /boot  vfat  defaults  0  2
 ```
 
-`mkinitrd` will not run without a fstab in the target.
+`mkinitrd` will not run unless the target fstab mounts both `/` and `/boot` by
+UUID.
+
+## Write initramfs policy
+
+Write `/mnt/praxis/etc/praxis/initramfs.conf` yourself:
+
+```text
+INITRAMFS_FORMAT=newc
+INITRAMFS_COMPRESSION=gzip
+INITRAMFS_OWNER=manual
+INITRAMFS_ROOT=disk
+```
+
+`mkinitrd` refuses to run unless this policy file exists and matches the
+supported initramfs format. `INITRAMFS_ROOT=disk` builds a small initramfs that
+mounts the real root filesystem from `root=UUID=...`; use `target` only when
+you intentionally want the whole target packed into the initramfs.
 
 ## Stage 2: Build initramfs
 
@@ -91,10 +109,11 @@ Binds `/proc`, `/sys`, `/dev`, `/run` and drops you into a shell inside the targ
 passwd
 ln -sf /usr/share/zoneinfo/Region/City /etc/localtime
 printf 'LANG=en_US.UTF-8\n' > /etc/locale.conf
+head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n' > /etc/machine-id
 exit
 ```
 
-`praxis-chroot` stamps `install-stage: chroot` on clean exit. `targetcheck` will refuse to pass if you skip this step.
+`praxis-chroot` stamps `install-stage: chroot` on clean exit. `targetcheck` will refuse to pass if you skip this step, leave `/etc/localtime` missing, leave `/etc/locale.conf` missing, or leave `/etc/machine-id` missing or invalid.
 
 ## Write boot entries
 
@@ -119,8 +138,12 @@ Write `/mnt/praxis/boot/loader/entries/praxis.conf`:
 title   Praxis
 linux   /praxis/vmlinuz
 initrd  /praxis/initramfs.cpio.gz
-options rdinit=/init praxis.live=0 loglevel=3
+options root=UUID=<root-uuid> rdinit=/init praxis.live=0 loglevel=3
 ```
+
+The boot entry must name the root filesystem by UUID and must include
+`rdinit=/init` and `praxis.live=0`. The `root=UUID=...` value must exactly
+match the root UUID in `/mnt/praxis/etc/fstab`.
 
 Install a bootloader. With `bootctl`:
 
@@ -143,7 +166,7 @@ If using Limine, write `/mnt/praxis/boot/limine.conf` as well.
 targetcheck /mnt/praxis
 ```
 
-Fails if chroot was skipped, kernel or initramfs is missing, boot entries are absent, or fstab was not written.
+Fails if chroot was skipped, kernel or initramfs is missing, boot entries are absent, fstab lacks UUID mounts, the boot root UUID does not match fstab, boot options are incomplete, initramfs policy is missing, localtime is missing, locale configuration is missing, or machine-id is invalid.
 
 ## Unmount and reboot
 

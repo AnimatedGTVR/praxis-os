@@ -3,10 +3,13 @@
 set -euo pipefail
 
 disk_file="${1:-}"
+repo_root="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 memory="${MEMORY:-2048}"
 cpus="${CPUS:-2}"
 disk_format="${QEMU_DISK_FORMAT:-qcow2}"
 vars_file="${PRAXIS_QEMU_OVMF_VARS_FILE:-}"
+reset_vars="${PRAXIS_QEMU_RESET_VARS:-1}"
+disk_bus="${QEMU_DISK_BUS:-virtio}"
 
 find_ovmf_code() {
   local candidate
@@ -46,6 +49,23 @@ if [[ ! -f "$disk_file" ]]; then
   exit 1
 fi
 
+if [[ ! -r "$disk_file" && "${EUID}" -ne 0 ]]; then
+  sudo chown "$(id -u):$(id -g)" "$disk_file"
+fi
+
+if [[ ! -r "$disk_file" ]]; then
+  echo "QEMU disk is not readable: $disk_file" >&2
+  exit 1
+fi
+
+if [[ "${PRAXIS_QEMU_REPAIR_ESP:-1}" == "1" ]]; then
+  "$repo_root/scripts/repair-qemu-esp.sh" "$disk_file" "$repo_root/build/rootfs"
+fi
+
+if [[ "${EUID}" -eq 0 && -n "${SUDO_UID:-}" && -n "${SUDO_GID:-}" && -e "$disk_file" ]]; then
+  chown "$SUDO_UID:$SUDO_GID" "$disk_file" 2>/dev/null || true
+fi
+
 command -v qemu-system-x86_64 >/dev/null 2>&1 || {
   echo "missing required tool: qemu-system-x86_64" >&2
   exit 1
@@ -68,14 +88,39 @@ if [[ -z "$vars_file" ]]; then
 fi
 
 mkdir -p "$(dirname "$vars_file")"
+if [[ "$reset_vars" == "1" ]]; then
+  rm -f "$vars_file"
+fi
 if [[ ! -f "$vars_file" ]]; then
   cp "$ovmf_vars_template" "$vars_file"
 fi
+
+disk_args=()
+case "$disk_bus" in
+  virtio)
+    disk_args=(
+      -drive "if=none,id=praxisdisk,file=$disk_file,format=$disk_format"
+      -device virtio-blk-pci,drive=praxisdisk,bootindex=1
+    )
+    ;;
+  ide)
+    disk_args=(
+      -drive "if=none,id=praxisdisk,file=$disk_file,format=$disk_format"
+      -device ide-hd,drive=praxisdisk,bootindex=1
+    )
+    ;;
+  *)
+    echo "unsupported QEMU_DISK_BUS: $disk_bus" >&2
+    exit 1
+    ;;
+esac
 
 kvm_args=()
 if [[ -r /dev/kvm && -w /dev/kvm ]]; then
   kvm_args=(-enable-kvm)
 fi
+
+vga_type="${QEMU_VGA:-virtio}"
 
 ui="${QEMU_UI:-gtk}"
 case "$ui" in
@@ -105,9 +150,10 @@ exec qemu-system-x86_64 \
   "${kvm_args[@]}" \
   -m "$memory" \
   -smp "$cpus" \
+  -vga "$vga_type" \
   "${ui_args[@]}" \
   -no-reboot \
   -drive if=pflash,format=raw,readonly=on,file="$ovmf_code" \
   -drive if=pflash,format=raw,file="$vars_file" \
-  -drive file="$disk_file",if=virtio,format="$disk_format" \
+  "${disk_args[@]}" \
   "${extra_args[@]}"

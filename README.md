@@ -153,16 +153,23 @@ mkdir /mnt/praxis/boot && mount /dev/vda1 /mnt/praxis/boot
 # stage 1: deploy rootfs
 praxis-install --hostname <name> /mnt/praxis
 
-# write /mnt/praxis/etc/fstab yourself (blkid for UUIDs)
+# write /mnt/praxis/etc/fstab yourself
+# UUID mounts for both / and /boot are required
+
+# write /mnt/praxis/etc/praxis/initramfs.conf yourself
+# required: newc format, gzip compression, manual owner
 
 # stage 2: build initramfs + kernel
 mkinitrd /mnt/praxis
 
 # stage 3: configure inside the target
 praxis-chroot /mnt/praxis
-# inside: passwd, localtime symlink, locale.conf, then exit
+# inside: passwd, localtime symlink, locale.conf, machine-id, then exit
+# targetcheck fails if localtime, locale.conf, or machine-id is missing
 
 # write boot entries yourself (loader.conf, entries/praxis.conf, EFI)
+# praxis.conf options must include root=UUID=..., rdinit=/init, praxis.live=0
+# root=UUID must match the / UUID in fstab
 
 # verify
 targetcheck /mnt/praxis

@@ -33,6 +33,7 @@ findmnt
 mountpoint
 fdisk
 sfdisk
+cfdisk
 parted
 wipefs
 mkfs.fat

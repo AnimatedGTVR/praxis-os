@@ -51,6 +51,21 @@ env \
 
 # Stage 2: write fstab
 praxis_write_fstab "${TARGET_ROOT}" || true
+if ! grep -Eq '^[[:space:]]*UUID=[^[:space:]]+[[:space:]]+/[[:space:]]+' "${TARGET_ROOT}/etc/fstab" 2>/dev/null; then
+    ROOT_UUID="${PRAXIS_DEV_ROOT_UUID:-00000000-0000-4000-8000-000000000001}"
+    BOOT_UUID="${PRAXIS_DEV_BOOT_UUID:-00000000-0000-4000-8000-000000000002}"
+    cat > "${TARGET_ROOT}/etc/fstab" <<EOF
+# Praxis developer fstab
+UUID=${ROOT_UUID} / ext4 defaults 0 1
+UUID=${BOOT_UUID} /boot vfat umask=0077 0 2
+EOF
+fi
+cat > "${TARGET_ROOT}/etc/praxis/initramfs.conf" <<EOF
+INITRAMFS_FORMAT=newc
+INITRAMFS_COMPRESSION=gzip
+INITRAMFS_OWNER=manual
+EOF
+printf '%s\n' "${PRAXIS_DEV_MACHINE_ID:-00000000000040008000000000000003}" > "${TARGET_ROOT}/etc/machine-id"
 
 # Stage 3: build initramfs
 env \
@@ -61,7 +76,8 @@ env \
 # Stage 4: write boot entries
 ENTRY_NAME=praxis-dev
 ENTRY_TITLE="Praxis Developer"
-ENTRY_OPTIONS="${PRAXIS_INSTALL_OPTIONS:-rdinit=/init praxis.live=0 loglevel=3 console=tty0}"
+ROOT_UUID="$(sed -n 's/^UUID=\([^[:space:]]*\)[[:space:]]\+\/[[:space:]].*/\1/p' "${TARGET_ROOT}/etc/fstab" | sed -n '1p')"
+ENTRY_OPTIONS="${PRAXIS_INSTALL_OPTIONS:-root=UUID=${ROOT_UUID} rdinit=/init praxis.live=0 loglevel=3 console=tty0}"
 
 praxis_write_loader_conf "${TARGET_ROOT}" "${ENTRY_NAME}"
 praxis_write_systemd_boot_entry "${TARGET_ROOT}" "${ENTRY_NAME}" "${ENTRY_TITLE}" "${ENTRY_OPTIONS}"

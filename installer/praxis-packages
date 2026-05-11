@@ -168,6 +168,28 @@ INSTALLED=${package_names}
 EOF
 }
 
+pacman_assume_args() {
+    assume_names="${PRAXIS_PACMAN_ASSUME:-filesystem}"
+
+    [ -n "${assume_names}" ] || return 0
+
+    old_ifs="${IFS}"
+    IFS=', '
+    set -- ${assume_names}
+    IFS="${old_ifs}"
+
+    for assume_name in "$@"; do
+        [ -n "${assume_name}" ] || continue
+        printf ' --assume-installed %s' "${assume_name}"
+    done
+}
+
+pacman_hook_args() {
+    if [ "${PRAXIS_PACMAN_DISABLE_HOOKS:-0}" = "1" ]; then
+        printf ' --hookdir %s' "${PRAXIS_PACMAN_EMPTY_HOOKDIR}"
+    fi
+}
+
 install_target_packages() {
     target_root="$1"
     desktop_name="$2"
@@ -186,6 +208,35 @@ install_target_packages() {
     fi
 
     ensure_pacman_tree "${target_root}"
+
+    if [ "${PRAXIS_PACMAN_DISABLE_HOOKS:-0}" = "1" ]; then
+        PRAXIS_PACMAN_EMPTY_HOOKDIR="${target_root}/etc/praxis/empty-hooks"
+        mkdir -p "${PRAXIS_PACMAN_EMPTY_HOOKDIR}"
+        PRAXIS_PACMAN_CONFIG="${target_root}/etc/praxis/pacman-nohooks.conf"
+        awk '
+            BEGIN { inserted = 0 }
+            /^\[options\]$/ {
+                print
+                print "NoExtract = usr/share/libalpm/hooks/*"
+                inserted = 1
+                next
+            }
+            { print }
+            END {
+                if (inserted == 0) {
+                    print "[options]"
+                    print "NoExtract = usr/share/libalpm/hooks/*"
+                }
+            }
+        ' "${target_root}/etc/pacman.conf" > "${PRAXIS_PACMAN_CONFIG}"
+        export PRAXIS_PACMAN_EMPTY_HOOKDIR
+        export PRAXIS_PACMAN_CONFIG
+    else
+        PRAXIS_PACMAN_EMPTY_HOOKDIR=""
+        PRAXIS_PACMAN_CONFIG="${target_root}/etc/pacman.conf"
+        export PRAXIS_PACMAN_EMPTY_HOOKDIR
+        export PRAXIS_PACMAN_CONFIG
+    fi
 
     package_args_file="$(mktemp)"
     trap 'rm -f "${package_args_file}" "${packages_file}"' EXIT INT TERM
@@ -207,8 +258,11 @@ install_target_packages() {
         return 0
     fi
 
+    assume_args="$(pacman_assume_args)"
+    hook_args="$(pacman_hook_args)"
+
     if [ "${target_root}" = "/" ]; then
-        pacman -Sy --noconfirm --needed $(cat "${package_args_file}")
+        pacman -Sy --noconfirm --needed ${assume_args} ${hook_args} $(cat "${package_args_file}")
     else
         pacman_cache_dir="${target_root}/var/cache/pacman/pkg"
         if [ -d /var/cache/pacman/pkg ]; then
@@ -220,12 +274,22 @@ install_target_packages() {
             --dbpath "${target_root}/var/lib/pacman" \
             --cachedir "${pacman_cache_dir}" \
             --logfile "${target_root}/var/log/pacman.log" \
-            --config "${target_root}/etc/pacman.conf" \
-            -Sy --noconfirm --needed $(cat "${package_args_file}")
+            --config "${PRAXIS_PACMAN_CONFIG}" \
+            -Sy --noconfirm --needed ${assume_args} ${hook_args} $(cat "${package_args_file}")
     fi
 
     installed_names="$(tr '\n' ' ' < "${package_args_file}" | sed 's/[[:space:]]*$//')"
     write_package_meta "${target_root}" "${desktop_name}" "${bundle_names}" "${extra_names}" "${installed_names}"
+
+    if [ "${PRAXIS_PACMAN_DISABLE_HOOKS:-0}" = "1" ]; then
+        cat > "${target_root}/etc/praxis/packages.hooks-deferred" <<EOF
+Pacman hooks were disabled during package installation.
+
+This target may need cache/sysuser/tmpfile refresh steps once Praxis grows the
+required userspace for systemd, MIME, fontconfig, GSettings, icon, and desktop
+database hooks.
+EOF
+    fi
 
     printf 'Package selection applied to %s\n' "${target_root}"
 }

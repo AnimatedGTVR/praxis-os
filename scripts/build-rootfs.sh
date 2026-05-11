@@ -137,6 +137,7 @@ cp "$repo_root/installer/praxis-chroot" "$stage_dir/usr/local/bin/praxis-chroot"
 cp "$repo_root/installer/praxis-packages" "$stage_dir/usr/local/bin/praxis-packages"
 cp "$repo_root/installer/praxis-desktop" "$stage_dir/usr/local/bin/praxis-desktop"
 cp "$repo_root/installer/targetcheck" "$stage_dir/usr/local/bin/targetcheck"
+cp "$repo_root/installer/praxis-init" "$stage_dir/usr/local/bin/praxis-init"
 cp "$repo_root/installer/praxis-live" "$stage_dir/usr/local/bin/praxis-live"
 cp "$repo_root/installer/praxis-dev-install" "$stage_dir/usr/local/bin/praxis-dev-install"
 ln -snf praxis-lsblk "$stage_dir/usr/local/bin/lsblk"
@@ -152,6 +153,9 @@ cp "$repo_root/Documentation/QEMU.md" "$stage_dir/usr/share/doc/praxis/QEMU.md"
 cp "$repo_root/Documentation/COMMANDS.md" "$stage_dir/usr/share/doc/praxis/COMMANDS.md"
 cp "$repo_root/Documentation/FIRST-BOOT.md" "$stage_dir/usr/share/doc/praxis/FIRST-BOOT.md"
 cp "$repo_root/Documentation/TROUBLESHOOTING.md" "$stage_dir/usr/share/doc/praxis/TROUBLESHOOTING.md"
+if [[ -f "$repo_root/Documentation/CHANGELOG.md" ]]; then
+  cp "$repo_root/Documentation/CHANGELOG.md" "$stage_dir/usr/share/doc/praxis/CHANGELOG.md"
+fi
 if [[ -f "$repo_root/Documentation/PACKAGES.md" ]]; then
   cp "$repo_root/Documentation/PACKAGES.md" "$stage_dir/usr/share/doc/praxis/PACKAGES.md"
 fi
@@ -240,6 +244,13 @@ if [[ "${PRAXIS_ALLOW_HOST_TOOLS:-0}" == "1" && -f /etc/ssl/certs/ca-certificate
   install -Dm644 /etc/ssl/certs/ca-certificates.crt "$stage_dir/etc/ssl/certs/ca-certificates.crt"
 fi
 
+if [[ "${PRAXIS_ALLOW_HOST_TOOLS:-0}" == "1" ]]; then
+  for terminfo_entry in /usr/share/terminfo/l/linux /usr/share/terminfo/v/vt100; do
+    [[ -f "$terminfo_entry" ]] || continue
+    install -Dm644 "$terminfo_entry" "$stage_dir$terminfo_entry"
+  done
+fi
+
 chmod +x \
   "$stage_dir/init" \
   "$stage_dir/usr/local/lib/praxis/common.sh" \
@@ -259,6 +270,7 @@ chmod +x \
   "$stage_dir/usr/local/bin/praxis-packages" \
   "$stage_dir/usr/local/bin/praxis-desktop" \
   "$stage_dir/usr/local/bin/targetcheck" \
+  "$stage_dir/usr/local/bin/praxis-init" \
   "$stage_dir/usr/local/bin/praxis-live" \
   "$stage_dir/usr/local/bin/praxis-dev-install"
 

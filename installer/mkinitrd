@@ -29,7 +29,35 @@ STAGE_FILE="${TARGET_ROOT}/etc/praxis/install-stage"
 stage="$(head -n1 "${STAGE_FILE}" 2>/dev/null || true)"
 [ "${stage}" = "rootfs" ] || { printf 'wrong stage: %s\n' "${stage:-none}" >&2; exit 1; }
 
-[ -r "${TARGET_ROOT}/etc/fstab" ] || { printf 'missing fstab\n' >&2; exit 1; }
+FSTAB_FILE="${TARGET_ROOT}/etc/fstab"
+[ -r "${FSTAB_FILE}" ] || { printf 'missing fstab\n' >&2; exit 1; }
+INITRAMFS_CONF="${TARGET_ROOT}/etc/praxis/initramfs.conf"
+[ -r "${INITRAMFS_CONF}" ] || { printf 'missing initramfs policy: %s\n' "${INITRAMFS_CONF}" >&2; exit 1; }
+
+grep -Eq '^INITRAMFS_FORMAT=newc$' "${INITRAMFS_CONF}" || {
+    printf 'initramfs policy must set INITRAMFS_FORMAT=newc\n' >&2
+    exit 1
+}
+
+grep -Eq '^INITRAMFS_COMPRESSION=gzip$' "${INITRAMFS_CONF}" || {
+    printf 'initramfs policy must set INITRAMFS_COMPRESSION=gzip\n' >&2
+    exit 1
+}
+
+grep -Eq '^INITRAMFS_OWNER=manual$' "${INITRAMFS_CONF}" || {
+    printf 'initramfs policy must set INITRAMFS_OWNER=manual\n' >&2
+    exit 1
+}
+
+if ! grep -Eq '^[[:space:]]*UUID=[^[:space:]]+[[:space:]]+/[[:space:]]+' "${FSTAB_FILE}"; then
+    printf 'fstab must mount / by UUID\n' >&2
+    exit 1
+fi
+
+if ! grep -Eq '^[[:space:]]*UUID=[^[:space:]]+[[:space:]]+/boot[[:space:]]+' "${FSTAB_FILE}"; then
+    printf 'fstab must mount /boot by UUID\n' >&2
+    exit 1
+fi
 
 if [ "${PRAXIS_ALLOW_UNMOUNTED_TARGET:-0}" != "1" ]; then
     praxis_is_mountpoint "${TARGET_ROOT}" || { printf 'not mounted: %s\n' "${TARGET_ROOT}" >&2; exit 1; }
@@ -37,6 +65,20 @@ fi
 
 SOURCE_ROOT="${PRAXIS_SOURCE_ROOT:-/}"
 KERNEL_SOURCE="${PRAXIS_INSTALL_KERNEL:-$SOURCE_ROOT/usr/share/praxis/vmlinuz}"
+INITRAMFS_ROOT="$(sed -n 's/^INITRAMFS_ROOT=//p' "${INITRAMFS_CONF}" | sed -n '1p')"
+[ -n "${INITRAMFS_ROOT}" ] || INITRAMFS_ROOT="target"
+case "${INITRAMFS_ROOT}" in
+    target)
+        INITRAMFS_SOURCE_ROOT="${TARGET_ROOT}"
+        ;;
+    disk)
+        INITRAMFS_SOURCE_ROOT="${SOURCE_ROOT}"
+        ;;
+    *)
+        printf 'unsupported INITRAMFS_ROOT: %s\n' "${INITRAMFS_ROOT}" >&2
+        exit 1
+        ;;
+esac
 
 [ -f "${KERNEL_SOURCE}" ] || { printf 'missing kernel: %s\n' "${KERNEL_SOURCE}" >&2; exit 1; }
 command -v gzip >/dev/null 2>&1 || { printf 'missing: gzip\n' >&2; exit 1; }
@@ -49,21 +91,23 @@ mkdir -p "${TARGET_ROOT}/boot/praxis"
 cp "${KERNEL_SOURCE}" "${TARGET_ROOT}/boot/praxis/vmlinuz"
 
 if command -v bsdtar >/dev/null 2>&1; then
-    bsdtar -C "${TARGET_ROOT}" \
+    bsdtar -C "${INITRAMFS_SOURCE_ROOT}" \
         --format=newc \
         --exclude "./proc" --exclude "./sys" --exclude "./dev" \
         --exclude "./run" --exclude "./tmp" \
+        --exclude "./boot" \
         --exclude "./boot/praxis/initramfs.cpio.gz" \
         -cf - . | gzip -n -9 > "${TARGET_ROOT}/boot/praxis/initramfs.cpio.gz"
 else
     (
-        cd "${TARGET_ROOT}"
+        cd "${INITRAMFS_SOURCE_ROOT}"
         find . \
             \( -path ./proc -o -path './proc/*' \
             -o -path ./sys -o -path './sys/*' \
             -o -path ./dev -o -path './dev/*' \
             -o -path ./run -o -path './run/*' \
             -o -path ./tmp -o -path './tmp/*' \
+            -o -path ./boot -o -path './boot/*' \
             -o -path ./boot/praxis/initramfs.cpio.gz \) -prune \
             -o -print | cpio -o -H newc | gzip -n -9
     ) > "${TARGET_ROOT}/boot/praxis/initramfs.cpio.gz"
@@ -71,4 +115,4 @@ fi
 
 printf 'initrd\n' > "${TARGET_ROOT}/etc/praxis/install-stage"
 sync
-printf 'initrd -> %s/boot/praxis/\n' "${TARGET_ROOT}"
+printf 'initrd (%s root) -> %s/boot/praxis/\n' "${INITRAMFS_ROOT}" "${TARGET_ROOT}"

@@ -84,6 +84,9 @@ case "${1:-}" in
     troubleshooting)
         show_doc "TROUBLESHOOTING.md"
         ;;
+    changelog)
+        show_doc "CHANGELOG.md"
+        ;;
     readme)
         show_doc "README.md"
         ;;
@@ -93,7 +96,7 @@ case "${1:-}" in
         ;;
     *)
         printf 'unknown topic: %s\n' "${1}" >&2
-        printf '%s\n' "available topics: install, qemu, commands, packages, docs, pax, first-boot, troubleshooting, readme" >&2
+        printf '%s\n' "available topics: install, qemu, commands, packages, docs, pax, first-boot, troubleshooting, changelog, readme" >&2
         exit 1
         ;;
 esac
@@ -108,6 +111,7 @@ printf '%s\n' "  praxis-help docs"
 printf '%s\n' "  praxis-help pax"
 printf '%s\n' "  praxis-help first-boot"
 printf '%s\n' "  praxis-help troubleshooting"
+printf '%s\n' "  praxis-help changelog"
 printf '%s\n' "  praxis-help readme"
 printf '\n'
 printf '%s\n' "install stages:"
