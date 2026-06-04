@@ -1,13 +1,15 @@
 [.Praxis Config - ricing-desktop profile .praxis.pax./]
 
 # Define a desktop setup meant for theming and ricing work.
+# All packages use reverse-domain identifiers.
+
 profile "ricing-desktop"
 {
-    desktop = plasma
-    compositor = picom
-    launcher = rofi
-    bar = polybar
-    terminal = kitty
+    desktop    = plasma
+    compositor = dev.praxis.picom
+    launcher   = dev.praxis.rofi
+    bar        = dev.praxis.polybar
+    terminal   = dev.praxis.kitty
 }
 
 # Install the desktop support tools first.

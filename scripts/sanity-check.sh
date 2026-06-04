@@ -30,6 +30,7 @@ sh -n "$repo_root/installer/praxis-status"
 sh -n "$repo_root/installer/praxis-lsblk"
 sh -n "$repo_root/installer/preflight"
 sh -n "$repo_root/installer/praxis-disk-report"
+sh -n "$repo_root/installer/praxis-disk"
 sh -n "$repo_root/installer/praxis-netcheck"
 sh -n "$repo_root/installer/praxis-support"
 sh -n "$repo_root/installer/praxis-postinstall"
@@ -38,6 +39,7 @@ sh -n "$repo_root/installer/mkinitrd"
 sh -n "$repo_root/installer/praxis-chroot"
 sh -n "$repo_root/installer/praxis-packages"
 sh -n "$repo_root/installer/praxis-desktop"
+sh -n "$repo_root/installer/praxis-desktop-fix"
 sh -n "$repo_root/installer/targetcheck"
 sh -n "$repo_root/installer/praxis-live"
 sh -n "$repo_root/installer/praxis-dev-install"
@@ -91,6 +93,10 @@ env \
   PATH="/bin:/usr/bin:$repo_root/installer" \
   PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
   "$repo_root/installer/praxis-disk-report" >/dev/null
+env \
+  PATH="/bin:/usr/bin:$repo_root/installer" \
+  PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  "$repo_root/installer/praxis-disk" /dev/vda /mnt/praxis --dry-run >/dev/null
 
 env \
   PATH="/bin:/usr/bin:$repo_root/installer" \
@@ -160,6 +166,7 @@ test -f "$tmpdir/rootfs/usr/local/bin/praxis-lsblk"
 test -L "$tmpdir/rootfs/usr/local/bin/lsblk"
 test -f "$tmpdir/rootfs/usr/local/bin/preflight"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-disk-report"
+test -f "$tmpdir/rootfs/usr/local/bin/praxis-disk"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-netcheck"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-support"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-postinstall"
@@ -168,6 +175,7 @@ test -f "$tmpdir/rootfs/usr/local/bin/mkinitrd"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-chroot"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-packages"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-desktop"
+test -f "$tmpdir/rootfs/usr/local/bin/praxis-desktop-fix"
 test -f "$tmpdir/rootfs/usr/local/bin/targetcheck"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-live"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-dev-install"
@@ -187,7 +195,8 @@ test -f "$tmpdir/rootfs/usr/share/doc/praxis/PAX.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/README.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/spec/PAX.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/packageinstall-config.pax"
-test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/source-pkg.pkg.pax"
+test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/source-pkg.pax"
+test ! -e "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/source-pkg.pkg.pax"
 test ! -e "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/sourcepkg-config.pkg.pax"
 test -f "$tmpdir/rootfs/bin/mount"
 test -f "$tmpdir/rootfs/bin/grep"

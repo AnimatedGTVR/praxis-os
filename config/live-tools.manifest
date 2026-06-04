@@ -33,12 +33,10 @@ findmnt
 mountpoint
 fdisk
 sfdisk
-cfdisk
 parted
 wipefs
 mkfs.fat
 mkfs.vfat
-mkfs.ext4
 mkswap
 swapon
 ip
@@ -62,4 +60,3 @@ dmesg
 head
 tail
 wc
-nano

@@ -1,0 +1,60 @@
+[.Praxis Config - disk partition and format setup .praxis.pax./]
+
+# Explicit disk layout for a Praxis install.
+# No automation. You describe every partition and every format step.
+
+define DEVICE = "/dev/vda"
+define TARGET = "/mnt/praxis"
+define BOOT   = "/mnt/praxis/boot"
+
+# ── Hardware check ────────────────────────────────────────────────────────────
+
+check hardware
+assert hardware.status == good "Hardware must pass before touching disk."
+
+# ── Disk layout definition ────────────────────────────────────────────────────
+
+disk "main"
+{
+    device    = DEVICE
+    table     = gpt
+    boot_size = "512M"
+    root_size = remaining
+}
+
+# ── Partitions ────────────────────────────────────────────────────────────────
+
+partition "boot"
+{
+    device = "/dev/vda1"
+    type   = efi
+    format = vfat
+    mount  = BOOT
+}
+
+partition "root"
+{
+    device = "/dev/vda2"
+    type   = linux
+    format = ext4
+    mount  = TARGET
+}
+
+# ── Format ────────────────────────────────────────────────────────────────────
+
+format "/dev/vda1" as vfat
+format "/dev/vda2" as ext4
+
+log "Partitions formatted."
+
+# ── Mount ─────────────────────────────────────────────────────────────────────
+
+mkdir TARGET
+mkdir BOOT
+
+mount "/dev/vda2" at TARGET
+assert disk.status == mounted "Root partition must mount before boot partition."
+
+mount "/dev/vda1" at BOOT
+
+log "Disk mounted: root at {TARGET}, boot at {BOOT}"

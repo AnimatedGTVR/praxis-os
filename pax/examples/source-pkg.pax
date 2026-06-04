@@ -3,10 +3,10 @@
 # Define a package that should be built through the Praxis source-pkg flow.
 package "source-pkg"
 {
-    source = "mesa-git"
-    compile = true
+    source       = dev.praxis.mesa-git
+    compile      = true
     compile_mode = source
-    optimize = true
+    optimize     = true
 }
 
 # Simulate the source build path for the selected package.

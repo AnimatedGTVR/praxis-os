@@ -1,0 +1,16 @@
+[.Praxis Config - workstation-config profile .praxis.pax./]
+
+# Bundle together a desktop and a small workstation software set.
+# Package identifiers use reverse-domain notation: tld.org.name
+
+install package org.mozilla.firefox
+install package dev.praxis.neovim
+install package org.videolan.vlc
+install package dev.praxis.kitty
+enable desktop plasma
+
+# Report when the profile has finished applying.
+if install.status == finished
+{
+    print "Workstation profile applied."
+}

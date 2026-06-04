@@ -1,0 +1,40 @@
+[.Praxis Config - service enable and start config .praxis.pax./]
+
+# Enable and configure system services for a Praxis workstation.
+# State every service explicitly. Nothing runs by default.
+
+let networking = true
+let ssh        = true
+let bluetooth  = false
+
+# ── Networking ────────────────────────────────────────────────────────────────
+
+if networking == true
+{
+    service enable "NetworkManager"
+    service start "NetworkManager"
+    log "NetworkManager enabled and started."
+}
+
+# ── SSH ───────────────────────────────────────────────────────────────────────
+
+if ssh == true
+{
+    service enable "sshd"
+    log "sshd enabled."
+}
+
+# ── Bluetooth ─────────────────────────────────────────────────────────────────
+
+if bluetooth == false
+{
+    service disable "bluetooth"
+    log "Bluetooth disabled."
+}
+
+# ── Core services ─────────────────────────────────────────────────────────────
+
+service enable "fstrim.timer"
+service enable "systemd-timesyncd"
+
+log "Service configuration complete."

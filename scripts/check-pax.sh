@@ -8,13 +8,17 @@ examples_root="$pax_root/examples"
 
 required_examples=(
   "packageinstall-config.pax"
-  "liveboot-config.boot.pax"
-  "workstation-config.profile.pax"
-  "core-packages.profile.pax"
-  "source-pkg.pkg.pax"
-  "ricing-desktop.profile.pax"
+  "liveboot-config.pax"
+  "workstation-config.pax"
+  "core-packages.pax"
+  "source-pkg.pax"
+  "ricing-desktop.pax"
   "hardware-check.pax"
   "core-system-config.pax"
+  "full-install.pax"
+  "user-setup.pax"
+  "disk-setup.pax"
+  "service-config.pax"
 )
 
 stale_examples=(
@@ -25,6 +29,11 @@ stale_examples=(
   "default-desktop.profile.pax"
   "default-hardware.pax"
   "default-system-config.pax"
+  "liveboot-config.boot.pax"
+  "workstation-config.profile.pax"
+  "core-packages.profile.pax"
+  "source-pkg.pkg.pax"
+  "ricing-desktop.profile.pax"
 )
 
 for example in "${required_examples[@]}"; do

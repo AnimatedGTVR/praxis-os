@@ -1,0 +1,44 @@
+[.Praxis Config - user and group setup .praxis.pax./]
+
+# Create users and groups for a Praxis workstation.
+# Every user is created explicitly. Every group membership is stated.
+
+define TARGET = "/mnt/praxis"
+
+# ── Groups ────────────────────────────────────────────────────────────────────
+
+group create "builders"
+group create "docker"
+
+# ── Primary user ──────────────────────────────────────────────────────────────
+
+user "alice"
+{
+    shell  = "/bin/bash"
+    home   = "/home/alice"
+    groups = [ "wheel", "audio", "video", "builders" ]
+}
+
+user create "alice"
+user add-group "alice" "wheel"
+user add-group "alice" "audio"
+user add-group "alice" "video"
+user add-group "alice" "builders"
+user set-password "alice"
+
+log "User alice created."
+
+# ── Secondary user ────────────────────────────────────────────────────────────
+
+user create "bob"
+user add-group "bob" "audio"
+user add-group "bob" "video"
+user set-password "bob"
+
+log "User bob created."
+
+# ── Root password ─────────────────────────────────────────────────────────────
+
+set password for "root"
+
+log "User setup complete."

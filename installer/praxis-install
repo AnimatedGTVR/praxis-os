@@ -22,11 +22,10 @@ fi
 SOURCE_ROOT="${PRAXIS_SOURCE_ROOT:-/}"
 TARGET_ROOT=""
 TARGET_HOSTNAME="${PRAXIS_TARGET_HOSTNAME:-}"
+DEPLOY_MODE=0
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        \\)
-            ;;
         --hostname)
             shift
             [ "$#" -gt 0 ] || { printf 'missing hostname\n' >&2; exit 1; }
@@ -34,7 +33,17 @@ while [ "$#" -gt 0 ]; do
             ;;
         -h|--help)
             printf 'usage: praxis-install --hostname <name> <target>\n'
+            printf '       praxis-install --hostname <name> deploy <target>\n'
             exit 0
+            ;;
+        deploy)
+            DEPLOY_MODE=1
+            ;;
+        rootfs)
+            [ "${DEPLOY_MODE}" = "1" ] || {
+                [ -z "${TARGET_ROOT}" ] || { printf 'usage: praxis-install --hostname <name> <target>\n' >&2; exit 1; }
+                TARGET_ROOT="$1"
+            }
             ;;
         *)
             [ -z "${TARGET_ROOT}" ] || { printf 'usage: praxis-install --hostname <name> <target>\n' >&2; exit 1; }
@@ -45,20 +54,16 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ -n "${TARGET_HOSTNAME}" ] || { printf 'hostname required\n' >&2; exit 1; }
-[ -n "${TARGET_ROOT}" ] || { printf 'target required\n' >&2; exit 1; }
+[ -n "${TARGET_ROOT}" ]     || { printf 'target required\n' >&2; exit 1; }
 
 praxis_valid_hostname "${TARGET_HOSTNAME}" || { printf 'invalid hostname: %s\n' "${TARGET_HOSTNAME}" >&2; exit 1; }
 
 case "${TARGET_ROOT}" in
     /*) ;;
     pacman|yay|paru)
-        printf 'invalid target: %s\n' "${TARGET_ROOT}" >&2
-        exit 1
-        ;;
+        printf 'invalid target: %s\n' "${TARGET_ROOT}" >&2; exit 1 ;;
     *)
-        printf 'target must be absolute path\n' >&2
-        exit 1
-        ;;
+        printf 'target must be absolute path\n' >&2; exit 1 ;;
 esac
 
 [ "${TARGET_ROOT}" != "/" ] || { printf 'refusing install to /\n' >&2; exit 1; }
@@ -67,12 +72,9 @@ command -v gzip >/dev/null 2>&1 || { printf 'missing: gzip\n' >&2; exit 1; }
 if ! command -v bsdtar >/dev/null 2>&1 && ! command -v tar >/dev/null 2>&1; then
     printf 'missing: tar\n' >&2; exit 1
 fi
-if ! command -v bsdtar >/dev/null 2>&1 && ! command -v cpio >/dev/null 2>&1; then
-    printf 'missing: cpio\n' >&2; exit 1
-fi
 
 if [ "${PRAXIS_ALLOW_UNMOUNTED_TARGET:-0}" != "1" ]; then
-    praxis_is_mountpoint "${TARGET_ROOT}" || { printf 'not mounted: %s\n' "${TARGET_ROOT}" >&2; exit 1; }
+    praxis_is_mountpoint "${TARGET_ROOT}"      || { printf 'not mounted: %s\n' "${TARGET_ROOT}" >&2; exit 1; }
     praxis_is_mountpoint "${TARGET_ROOT}/boot" || { printf 'not mounted: %s/boot\n' "${TARGET_ROOT}" >&2; exit 1; }
 fi
 
@@ -85,6 +87,8 @@ if [ "${PRAXIS_SKIP_BOOT_FSTYPE_CHECK:-0}" != "1" ] && [ "${PRAXIS_ALLOW_UNMOUNT
 fi
 
 mkdir -p "${TARGET_ROOT}/etc/praxis"
+
+# ── Copy rootfs ───────────────────────────────────────────────────────────────
 
 if command -v bsdtar >/dev/null 2>&1; then
     if [ "${SOURCE_ROOT}" = "/" ]; then
@@ -114,7 +118,78 @@ else
     fi
 fi
 
+# ── Identity (hostname, hosts) ────────────────────────────────────────────────
+
 praxis_write_identity_files "${TARGET_ROOT}" "${TARGET_HOSTNAME}"
+
+# ── fstab ─────────────────────────────────────────────────────────────────────
+
+if [ "${PRAXIS_ALLOW_UNMOUNTED_TARGET:-0}" != "1" ]; then
+    praxis_write_fstab "${TARGET_ROOT}"
+fi
+
+# ── Machine ID ────────────────────────────────────────────────────────────────
+
+if [ ! -s "${TARGET_ROOT}/etc/machine-id" ]; then
+    od -A n -t x1 /dev/urandom 2>/dev/null | tr -d ' \n' | head -c 32 \
+        > "${TARGET_ROOT}/etc/machine-id" 2>/dev/null || \
+        printf '%032x' 0 > "${TARGET_ROOT}/etc/machine-id"
+fi
+
+# ── Locale / timezone defaults ────────────────────────────────────────────────
+
+if [ ! -f "${TARGET_ROOT}/etc/locale.conf" ]; then
+    printf 'LANG=en_US.UTF-8\n' > "${TARGET_ROOT}/etc/locale.conf"
+fi
+
+if [ ! -e "${TARGET_ROOT}/etc/localtime" ]; then
+    ln -sf /usr/share/zoneinfo/UTC "${TARGET_ROOT}/etc/localtime"
+fi
+
+# ── initramfs policy (required by mkinitrd) ───────────────────────────────────
+
+if [ ! -f "${TARGET_ROOT}/etc/praxis/initramfs.conf" ]; then
+    cat > "${TARGET_ROOT}/etc/praxis/initramfs.conf" <<'EOF'
+INITRAMFS_FORMAT=newc
+INITRAMFS_COMPRESSION=gzip
+INITRAMFS_OWNER=manual
+INITRAMFS_ROOT=disk
+EOF
+fi
+
+# ── Boot configuration ────────────────────────────────────────────────────────
+
+# Derive root=UUID= for kernel cmdline from the mounted root device
+BOOT_OPTIONS="rdinit=/init praxis.live=0 loglevel=3 console=tty0"
+if [ "${PRAXIS_ALLOW_UNMOUNTED_TARGET:-0}" != "1" ] && command -v blkid >/dev/null 2>&1; then
+    _root_dev="$(praxis_find_mount_source "${TARGET_ROOT}" 2>/dev/null || true)"
+    if [ -n "${_root_dev}" ]; then
+        _root_uuid="$(blkid -s UUID -o value "${_root_dev}" 2>/dev/null || true)"
+        if [ -n "${_root_uuid}" ]; then
+            BOOT_OPTIONS="root=UUID=${_root_uuid} ${BOOT_OPTIONS}"
+        fi
+    fi
+fi
+
+# Limine config
+praxis_write_limine_config "${TARGET_ROOT}" "Praxis" "${BOOT_OPTIONS}"
+
+# Copy praxis-specific limine conf into boot/praxis/ for per-entry use
+mkdir -p "${TARGET_ROOT}/boot/praxis"
+cp "${TARGET_ROOT}/boot/limine.conf" "${TARGET_ROOT}/boot/praxis/limine.conf" 2>/dev/null || true
+
+# Copy Limine UEFI binary
+_limine_efi="${SOURCE_ROOT}/usr/share/praxis/boot/BOOTX64.EFI"
+praxis_install_limine_uefi "${TARGET_ROOT}" "${_limine_efi}" || true
+
+# systemd-boot entries (fallback loader)
+praxis_write_loader_conf "${TARGET_ROOT}" "praxis"
+praxis_write_systemd_boot_entry "${TARGET_ROOT}" "praxis" "Praxis" "${BOOT_OPTIONS}"
+if [ "${PRAXIS_SKIP_BOOTCTL:-0}" != "1" ]; then
+    praxis_install_systemd_boot "${TARGET_ROOT}" || true
+fi
+
+# ── Stage and metadata ────────────────────────────────────────────────────────
 
 printf 'rootfs\n' > "${TARGET_ROOT}/etc/praxis/install-stage"
 

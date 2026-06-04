@@ -1,0 +1,112 @@
+[.Praxis Config - full workstation install .praxis.pax./]
+
+# Complete Praxis install from partition to first boot.
+# Every step is explicit. Nothing runs unless you wrote it.
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+define DEVICE   = "/dev/vda"
+define TARGET   = "/mnt/praxis"
+define BOOT     = "/mnt/praxis/boot"
+define HOSTNAME = "praxisbox"
+define LOCALE   = "en_US.UTF-8"
+define TIMEZONE = "America/New_York"
+define USER     = "alice"
+
+# ── Hardware gate ─────────────────────────────────────────────────────────────
+
+check hardware
+
+assert hardware.status == good "Hardware check must pass before install."
+log "Hardware: {hardware.arch}, {hardware.ram}MiB RAM, {hardware.cores} cores"
+
+# ── Disk setup ────────────────────────────────────────────────────────────────
+
+disk "main"
+{
+    device    = DEVICE
+    table     = gpt
+    boot_size = "512M"
+    root_size = remaining
+}
+
+format "/dev/vda1" as vfat
+format "/dev/vda2" as ext4
+
+mkdir TARGET
+mkdir BOOT
+mount "/dev/vda2" at TARGET
+mount "/dev/vda1" at BOOT
+
+log "Disk mounted at {TARGET}"
+
+# ── Install config ────────────────────────────────────────────────────────────
+
+config "install"
+{
+    target   = TARGET
+    hostname = HOSTNAME
+    desktop  = plasma
+    locale   = LOCALE
+    timezone = TIMEZONE
+}
+
+# ── Packages ──────────────────────────────────────────────────────────────────
+
+install bundle "essentials"
+install bundle "developer"
+install desktop config.desktop
+
+install package org.mozilla.firefox
+install package dev.praxis.neovim
+install package dev.praxis.kitty
+
+assert install.status == finished "Base install must complete before configuration."
+
+# ── System configuration ──────────────────────────────────────────────────────
+
+set hostname config.hostname
+set locale config.locale
+set timezone config.timezone
+set keymap "us"
+
+symlink "/usr/share/zoneinfo/{config.timezone}" to "/mnt/praxis/etc/localtime"
+write "/mnt/praxis/etc/locale.conf" content "LANG={config.locale}\n"
+exec "locale-gen"
+
+# ── User setup ────────────────────────────────────────────────────────────────
+
+user create USER
+user add-group USER "wheel"
+user add-group USER "audio"
+user add-group USER "video"
+user set-password USER
+set password for "root"
+
+# ── Services ──────────────────────────────────────────────────────────────────
+
+service enable "NetworkManager"
+service enable "sshd"
+
+# ── Boot ──────────────────────────────────────────────────────────────────────
+
+initramfs build TARGET
+
+assert initramfs.status == built "Initramfs must build before bootloader install."
+
+bootloader install limine
+
+bootloader entry "praxis"
+{
+    title   = "Praxis"
+    linux   = "/praxis/vmlinuz"
+    initrd  = "/praxis/initramfs.cpio.gz"
+    options = "root=UUID=auto rdinit=/init praxis.live=0 loglevel=3"
+}
+
+# ── Finish ────────────────────────────────────────────────────────────────────
+
+umount BOOT
+umount TARGET
+
+log "Install complete."

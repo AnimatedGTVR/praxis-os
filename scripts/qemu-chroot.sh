@@ -30,6 +30,27 @@ require_tool() {
   fi
 }
 
+run_target_sh() {
+  chroot "$target_root" /bin/sh -c "$1"
+}
+
+refresh_desktop_caches() {
+  printf 'Refreshing desktop runtime state in target ...\n'
+
+  if [[ -x "$target_root/usr/local/bin/praxis-desktop-fix" ]]; then
+    chroot "$target_root" /usr/local/bin/praxis-desktop-fix "$desktop"
+    return 0
+  fi
+
+  run_target_sh 'if command -v systemd-sysusers >/dev/null 2>&1; then systemd-sysusers || true; fi'
+  run_target_sh 'if command -v systemd-tmpfiles >/dev/null 2>&1; then systemd-tmpfiles --create || true; fi'
+  run_target_sh 'if command -v dbus-uuidgen >/dev/null 2>&1; then dbus-uuidgen --ensure=/etc/machine-id || true; fi'
+  run_target_sh 'if command -v glib-compile-schemas >/dev/null 2>&1 && [ -d /usr/share/glib-2.0/schemas ]; then glib-compile-schemas /usr/share/glib-2.0/schemas; fi'
+  run_target_sh 'if command -v gdk-pixbuf-query-loaders >/dev/null 2>&1; then gdk-pixbuf-query-loaders --update-cache; fi'
+  run_target_sh 'if command -v update-mime-database >/dev/null 2>&1 && [ -d /usr/share/mime ]; then update-mime-database /usr/share/mime; fi'
+  run_target_sh 'if command -v gtk-update-icon-cache >/dev/null 2>&1; then for _icon_dir in /usr/share/icons/*; do [ -f "$_icon_dir/index.theme" ] || continue; gtk-update-icon-cache -q -t -f "$_icon_dir" >/dev/null 2>&1 || true; done; fi'
+}
+
 cleanup() {
   set +e
   if [[ -n "$target_root" ]]; then
@@ -62,7 +83,7 @@ if [[ "${EUID}" -ne 0 ]]; then
     "$0" "$disk_file" "$disk_size" "$source_root"
 fi
 
-for tool in qemu-img qemu-nbd sfdisk partprobe mkfs.vfat mkfs.ext4 blkid mount umount; do
+for tool in qemu-img qemu-nbd sfdisk partprobe mkfs.vfat mkfs.ext4 blkid mount umount chroot; do
   require_tool "$tool"
 done
 
@@ -166,33 +187,118 @@ EOF
 
   case "$desktop" in
     xfce)
-      printf 'exec startxfce4\n' > "$target_root/root/.xinitrc"
+      cat > "$target_root/root/.xinitrc" <<'EOF'
+export NO_AT_BRIDGE=1
+export XDG_CURRENT_DESKTOP=XFCE
+export XDG_SESSION_DESKTOP=xfce
+export DESKTOP_SESSION=xfce
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/root}"
+mkdir -p "${XDG_RUNTIME_DIR}"
+chmod 700 "${XDG_RUNTIME_DIR}"
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+
+if command -v dbus-launch >/dev/null 2>&1; then
+    eval "$(dbus-launch --sh-syntax --exit-with-session)"
+elif command -v dbus-daemon >/dev/null 2>&1; then
+    _dbus_info="$(dbus-daemon --session --fork --print-address --print-pid 2>/dev/null || true)"
+    export DBUS_SESSION_BUS_ADDRESS="$(printf '%s\n' "${_dbus_info}" | sed -n '1p')"
+    export DBUS_SESSION_BUS_PID="$(printf '%s\n' "${_dbus_info}" | sed -n '2p')"
+fi
+
+xfconfd >/tmp/xfconfd.log 2>&1 &
+sleep 1
+xfsettingsd >/tmp/xfsettingsd.log 2>&1 &
+if command -v xsetroot >/dev/null 2>&1; then
+    xsetroot -solid '#061424' >/tmp/xsetroot.log 2>&1 || true
+fi
+xfwm4 --replace >/tmp/xfwm4.log 2>&1 &
+XFWM_PID=$!
+sleep 1
+if command -v xfce4-panel >/dev/null 2>&1; then
+    xfce4-panel --disable-wm-check >/tmp/xfce4-panel.log 2>&1 &
+fi
+sleep 1
+if ! pgrep -x xfce4-panel >/dev/null 2>&1 && command -v tint2 >/dev/null 2>&1; then
+    if [ -r /root/.config/tint2/tint2rc ]; then
+        tint2 -c /root/.config/tint2/tint2rc >/tmp/tint2.log 2>&1 &
+    else
+        tint2 >/tmp/tint2.log 2>&1 &
+    fi
+fi
+xfdesktop >/tmp/xfdesktop.log 2>&1 &
+sleep 1
+if command -v xsetroot >/dev/null 2>&1; then
+    xsetroot -solid '#061424' >/tmp/xsetroot.log 2>&1 || true
+fi
+thunar --daemon >/tmp/thunar.log 2>&1 &
+if command -v xfce4-terminal >/dev/null 2>&1; then
+    xfce4-terminal >/tmp/xfce4-terminal.log 2>&1 &
+fi
+
+wait "${XFWM_PID}"
+EOF
       ;;
     mate)
-      printf 'exec mate-session\n' > "$target_root/root/.xinitrc"
+      cat > "$target_root/root/.xinitrc" <<'EOF'
+export NO_AT_BRIDGE=1
+if command -v dbus-run-session >/dev/null 2>&1; then
+    exec dbus-run-session mate-session
+fi
+exec mate-session
+EOF
       ;;
     lxqt)
-      printf 'exec startlxqt\n' > "$target_root/root/.xinitrc"
+      cat > "$target_root/root/.xinitrc" <<'EOF'
+export NO_AT_BRIDGE=1
+if command -v dbus-run-session >/dev/null 2>&1; then
+    exec dbus-run-session startlxqt
+fi
+exec startlxqt
+EOF
       ;;
     i3)
-      printf 'exec i3\n' > "$target_root/root/.xinitrc"
+      cat > "$target_root/root/.xinitrc" <<'EOF'
+export NO_AT_BRIDGE=1
+if command -v dbus-run-session >/dev/null 2>&1; then
+    exec dbus-run-session i3
+fi
+exec i3
+EOF
       ;;
     openbox)
-      printf 'exec openbox-session\n' > "$target_root/root/.xinitrc"
+      cat > "$target_root/root/.xinitrc" <<'EOF'
+export NO_AT_BRIDGE=1
+if command -v dbus-run-session >/dev/null 2>&1; then
+    exec dbus-run-session openbox-session
+fi
+exec openbox-session
+EOF
       ;;
     plasma)
-      printf 'exec startplasma-x11\n' > "$target_root/root/.xinitrc"
+      cat > "$target_root/root/.xinitrc" <<'EOF'
+export NO_AT_BRIDGE=1
+if command -v dbus-run-session >/dev/null 2>&1; then
+    exec dbus-run-session startplasma-x11
+fi
+exec startplasma-x11
+EOF
       ;;
     budgie)
       cat > "$target_root/root/.xinitrc" <<'EOF'
+export NO_AT_BRIDGE=1
 export XDG_CURRENT_DESKTOP=Budgie:GNOME
 export XDG_SESSION_DESKTOP=budgie-desktop
 export DESKTOP_SESSION=budgie-desktop
+if command -v dbus-run-session >/dev/null 2>&1; then
+    exec dbus-run-session startbudgielabwc
+fi
 exec startbudgielabwc
 EOF
       ;;
     gnome)
       cat > "$target_root/root/.xinitrc" <<'EOF'
+export NO_AT_BRIDGE=1
 export XDG_CURRENT_DESKTOP=GNOME
 export XDG_SESSION_DESKTOP=gnome
 export DESKTOP_SESSION=gnome
@@ -204,6 +310,7 @@ EOF
       ;;
   esac
   chmod +x "$target_root/root/.xinitrc"
+  refresh_desktop_caches
 
   cat >> "$target_root/etc/motd" <<EOF
 
@@ -236,9 +343,12 @@ linux   /praxis/vmlinuz
 initrd  /praxis/initramfs.cpio.gz
 options root=UUID=$root_uuid rdinit=/init praxis.live=0 loglevel=3
 EOF
-cat > "$target_root/boot/limine.conf" <<EOF
+mkdir -p "$target_root/boot/limine"
+cat > "$target_root/boot/limine/limine.conf" <<EOF
+# Praxis - Limine bootloader configuration (Limine 12.x)
 timeout: 4
 default_entry: 1
+serial: yes
 
 /Praxis
 protocol: linux
@@ -246,6 +356,8 @@ path: boot():/praxis/vmlinuz
 module_path: boot():/praxis/initramfs.cpio.gz
 cmdline: root=UUID=$root_uuid rdinit=/init praxis.live=0 loglevel=3
 EOF
+cp "$target_root/boot/limine/limine.conf" "$target_root/boot/limine.conf"
+cp "$target_root/boot/limine/limine.conf" "$target_root/boot/EFI/BOOT/limine.conf"
 
 if [[ -f "$source_root/usr/share/praxis/boot/BOOTX64.EFI" ]]; then
   cp "$source_root/usr/share/praxis/boot/BOOTX64.EFI" "$target_root/boot/EFI/BOOT/BOOTX64.EFI"

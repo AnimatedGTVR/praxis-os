@@ -1,9 +1,9 @@
 # Praxis Docs
 
-This file is the single-file Praxis documentation pass.
+Single-file reference. Covers install, QEMU workflows, commands, packages,
+troubleshooting, and PAX.
 
-It pulls the main install, runtime, package, QEMU, troubleshooting, and PAX
-notes into one place so you can read or ship the docs as one document.
+---
 
 ## What Praxis Is
 
@@ -11,15 +11,9 @@ Praxis is a shell-first Linux distro with a clear live environment, a direct
 install path, local docs in the image, and a runtime toolset that stays close
 to the system instead of hiding it.
 
-Praxis is meant to be:
-
-- readable
-- installable
-- easy to inspect
-- easy to extend
-
-It is not trying to be a giant installer UI or a heavily abstracted desktop
-remix.
+Praxis is meant to be readable, installable, easy to inspect, and easy to
+extend. It is not trying to be a giant installer UI or a heavily abstracted
+desktop remix.
 
 ## Current Status
 
@@ -27,621 +21,522 @@ Praxis currently includes:
 
 - a live ISO build flow
 - a shell-first live environment
-- a real install command
+- a real install command (`praxis-install`)
 - desktop profiles and install bundles
-- package selection during install
-- a branded fastfetch setup with `praxis-fetch`
+- a native package format and repository (`praxis-pkg`, `.prx`)
+- a branded fetch display (`praxis-fetch`)
 - local docs available inside the live image and installed target
 - QEMU boot, install, and smoke-test workflows
-
-The current package layer uses `pacman` repositories so Praxis can already
-install real desktop environments and software bundles while the distro grows.
+- PAX — a domain-specific language for system intent
 
 ## Repository Layout
 
-- `boot/` for boot and init entry logic
-- `config/` for distro metadata, manifests, and package maps
-- `Documentation/` for operator docs
-- `docs/` for architecture notes, roadmap, and wiki pages
-- `installer/` for live-environment commands
-- `rootfs/` for the base filesystem skeleton
-- `scripts/` for build, boot, and validation helpers
-- `pax/` for the Praxis domain-specific language
+```
+boot/           boot and init configuration
+config/         distro metadata, manifests, package maps
+Documentation/  operator docs (this directory)
+docs/           architecture notes, roadmap, wiki pages
+installer/      live-environment commands
+pax/            Praxis domain-specific language
+rootfs/         base filesystem skeleton
+scripts/        build, boot, and validation helpers
+```
+
+---
 
 ## Build and QEMU Workflow
 
-Main commands:
+```bash
+make help            # list all targets
+make iso             # build build/praxis.iso
+make qemu            # boot the live ISO in QEMU
+make qemu-install    # boot live ISO with QEMU disk attached (manual install)
+make qemu-chroot     # stage QEMU disk and enter interactive praxis-chroot
+make qemu-full       # stage QEMU disk fully non-interactively
+make qemu-installed  # boot the staged QEMU disk with UEFI firmware
+make smoke           # headless boot, wait for praxis# prompt
+make check           # validate shell syntax and rootfs staging
+```
+
+### Fast Path
 
 ```bash
-make help
 make iso
-make qemu
-make qemu-install
-make qemu-chroot
-make qemu-full DESKTOP=xfce
-make qemu-full-xfce
+make qemu-full
 make qemu-installed
-make smoke
-make check
 ```
 
-What they do:
+`make qemu-full` wipes the disk, partitions it, installs the rootfs, builds
+the initramfs, and writes the boot config — no interactive prompt. Then
+`make qemu-installed` boots it.
 
-- `make iso` builds `build/praxis.iso`
-- `make qemu` boots the live ISO in QEMU
-- `make qemu-install` boots the ISO with a writable VM disk attached
-- `make qemu-chroot` stages the QEMU disk and enters `praxis-chroot`
-- `make qemu-full DESKTOP=xfce` stages and boots a desktop QEMU target
-- `make qemu-full-xfce` is shorthand for the XFCE desktop target
-- `make qemu-installed` boots the installed VM disk with UEFI firmware
-- `make smoke` runs a headless boot and waits for the `praxis#` prompt
-- `make check` validates shell syntax and rootfs staging
-
-Recommended local loop:
+### Manual Install Test Loop
 
 ```bash
-make check
-make smoke
+make iso
 make qemu-install
 ```
 
-Then after the install inside the VM:
+Inside the live VM:
+
+```bash
+praxis-disk /dev/vda /mnt/praxis
+praxis-install --hostname praxisvm /mnt/praxis
+mkinitrd /mnt/praxis
+praxis-chroot /mnt/praxis    # passwd; exit
+targetcheck /mnt/praxis
+sync && umount /mnt/praxis/boot && umount /mnt/praxis
+```
+
+Then:
 
 ```bash
 make qemu-installed
 ```
 
-If you want terminal-only QEMU logs:
-
-```bash
-QEMU_UI=nographic make qemu
-```
+---
 
 ## Live Environment
 
-Praxis boots into a shell-first live environment.
-
-You get:
-
-- a terminal
-- the Praxis tools
-- local docs in `/usr/share/doc/praxis`
-- a direct install path
+Praxis boots into a shell-first live environment. You get a terminal, the
+Praxis tools, and local docs in `/usr/share/doc/praxis`.
 
 Useful commands:
 
 ```bash
 praxis-help
 praxis-status
-praxis-preflight
+preflight
 praxis-disk-report
 praxis-netcheck
 praxis-support
 praxis-fetch
-praxis-fetch --text
 ```
 
-The live toolkit is meant to help you inspect the system before you write it.
+---
 
 ## Installing Praxis
 
-Praxis does not partition disks for you. You choose the layout, mount the
-target, write the fstab, configure the target, and write the boot entries.
+### Partition and Format
 
-From the live shell, a common starting flow is:
+#### Option A — praxis-disk
 
 ```bash
-praxis-help
-praxis-preflight
-praxis-help install
-lsblk
-praxis-disk-report
+praxis-disk /dev/vda /mnt/praxis
 ```
 
-### Example Disk Layout
+Wipes the disk, creates a GPT (512M EFI + rest root), formats both partitions,
+and mounts everything. Supports `--boot-size` and `--dry-run`.
 
-This example assumes:
-
-- `/dev/sda1` is the EFI system partition
-- `/dev/sda2` is the Praxis root partition
-
-### Format and Mount
+#### Option B — Manual
 
 ```bash
-mkfs.fat -F 32 /dev/sda1
-mkfs.ext4 /dev/sda2
-
+fdisk /dev/vda           # g, n 1 +512M, t 1, n 2, w
+mkfs.vfat -F32 -n BOOT /dev/vda1
+mkfs.ext4 -L ROOT /dev/vda2
 mkdir -p /mnt/praxis
-mount /dev/sda2 /mnt/praxis
+mount /dev/vda2 /mnt/praxis
 mkdir -p /mnt/praxis/boot
-mount /dev/sda1 /mnt/praxis/boot
+mount /dev/vda1 /mnt/praxis/boot
 ```
 
-Praxis expects the EFI system partition to be mounted at:
-
-```text
-/mnt/praxis/boot
-```
-
-### Inspect Available Desktop Profiles and Bundles
+### Stage 1 — Deploy Rootfs
 
 ```bash
-praxis-packages list
-praxis-packages show desktop xfce
-praxis-packages show bundle developer
+praxis-install --hostname <name> /mnt/praxis
 ```
 
-### Stage 1: Deploy Rootfs
+Copies the live rootfs to the target. Written automatically:
 
-Run the install command after the root and EFI partitions are mounted:
+- `/etc/fstab` — UUID mounts from live mounts
+- `/etc/machine-id` — random 32-hex-char ID
+- `/etc/locale.conf` — `LANG=en_US.UTF-8`
+- `/etc/localtime` — UTC symlink
+- `/etc/praxis/initramfs.conf` — initramfs policy
+- `/boot/EFI/BOOT/BOOTX64.EFI` — Limine UEFI binary
+- `/boot/limine.conf`, `/boot/limine/limine.conf`, `/boot/EFI/BOOT/limine.conf`
+- `/boot/loader/loader.conf`, `/boot/loader/entries/praxis.conf`
+
+Stamps `install-stage: rootfs`.
+
+Override timezone/locale if needed before stage 2:
 
 ```bash
-praxis-install --hostname praxisbox /mnt/praxis
+ln -sf /usr/share/zoneinfo/Region/City /mnt/praxis/etc/localtime
+printf 'LANG=xx_XX.UTF-8\n' > /mnt/praxis/etc/locale.conf
 ```
 
-### Write fstab
-
-Get UUIDs:
-
-```bash
-blkid
-```
-
-Write `/mnt/praxis/etc/fstab` yourself. UUID mounts are required for both `/`
-and `/boot`:
-
-```text
-UUID=<root-uuid>  /      ext4  defaults  0  1
-UUID=<boot-uuid>  /boot  vfat  defaults  0  2
-```
-
-### Write Initramfs Policy
-
-Write `/mnt/praxis/etc/praxis/initramfs.conf` yourself:
-
-```text
-INITRAMFS_FORMAT=newc
-INITRAMFS_COMPRESSION=gzip
-INITRAMFS_OWNER=manual
-INITRAMFS_ROOT=disk
-```
-
-The initramfs builder refuses to continue without this explicit policy. The
-`disk` root mode keeps installed desktops on the real root partition instead of
-packing them into `/boot`.
-
-### Stage 2: Build Initramfs
+### Stage 2 — Build Initramfs
 
 ```bash
 mkinitrd /mnt/praxis
 ```
 
-This refuses to run unless the target fstab mounts both `/` and `/boot` by UUID.
+Copies the kernel to `/boot/praxis/vmlinuz` and builds the initramfs at
+`/boot/praxis/initramfs.cpio.gz`. Requires stage 1 and UUID fstab entries
+for both `/` and `/boot`. Stamps `install-stage: initrd`.
 
-### Stage 3: Configure Target
+### Stage 3 — Configure Target
 
 ```bash
 praxis-chroot /mnt/praxis
 ```
 
-Inside the chroot, do at minimum:
+Binds `/proc`, `/sys`, `/dev`, `/run` and drops into a shell inside the target.
+At minimum:
 
 ```sh
 passwd
-ln -sf /usr/share/zoneinfo/Region/City /etc/localtime
-printf 'LANG=en_US.UTF-8\n' > /etc/locale.conf
-head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n' > /etc/machine-id
 exit
 ```
 
-`targetcheck` fails if the chroot stage, localtime, locale configuration, or
-machine-id is missing.
+Stamps `install-stage: chroot` on clean exit.
 
-### Write Boot Entries
-
-Create the loader paths:
+### Verify
 
 ```bash
-mkdir -p /mnt/praxis/boot/loader/entries
-```
-
-Write `/mnt/praxis/boot/loader/loader.conf`:
-
-```text
-default praxis
-timeout 4
-```
-
-Write `/mnt/praxis/boot/loader/entries/praxis.conf`:
-
-```text
-title   Praxis
-linux   /praxis/vmlinuz
-initrd  /praxis/initramfs.cpio.gz
-options root=UUID=<root-uuid> rdinit=/init praxis.live=0 loglevel=3
-```
-
-The boot entry must include `root=UUID=...`, `rdinit=/init`, and
-`praxis.live=0`. The root UUID must exactly match the `/` UUID in fstab.
-
-### What Praxis Writes
-
-The staged install writes:
-
-- `/mnt/praxis/boot/praxis/vmlinuz`
-- `/mnt/praxis/boot/praxis/initramfs.cpio.gz`
-- `/mnt/praxis/etc/praxis/install`
-- `/mnt/praxis/etc/hostname`
-- `/mnt/praxis/etc/hosts`
-
-You write `/mnt/praxis/etc/fstab`, `/mnt/praxis/boot/loader/loader.conf`, the
-loader entry, and the EFI bootloader setup yourself.
-
-### Verify the Target
-
-Use:
-
-```bash
-praxis-target-check /mnt/praxis
-```
-
-Useful manual checks:
-
-```bash
-cat /mnt/praxis/etc/fstab
-cat /mnt/praxis/etc/hostname
-cat /mnt/praxis/boot/loader/entries/praxis.conf
-ls /mnt/praxis/boot/praxis
-cat /mnt/praxis/etc/praxis/packages.selected
+targetcheck /mnt/praxis
 ```
 
 ### Finish
 
 ```bash
-praxis-postinstall /mnt/praxis
 sync
 umount /mnt/praxis/boot
 umount /mnt/praxis
 ```
 
-Then boot the installed target:
-
-```bash
-make qemu-installed
-```
-
-### Developer Install
-
-For a fast directory-target developer install:
-
-```bash
-praxis-dev-install /mnt/praxis-dev
-```
+---
 
 ## Commands
 
-### Quick Start
+### Install
 
 ```bash
-praxis-help
-praxis-status
-praxis-preflight
-praxis-help install
-praxis-help qemu
-praxis-help commands
-praxis-help packages
-praxis-help first-boot
-praxis-help troubleshooting
-```
-
-### Branding and System Info
-
-```bash
-praxis-fetch
-praxis-fetch --text
-fastfetch
-```
-
-### Install Commands
-
-```bash
-praxis-install --hostname praxisbox /mnt/praxis
-praxis-install --hostname praxisbox --desktop xfce --bundle internet /mnt/praxis
-praxis-dev-install /mnt/praxis-dev
-praxis-target-check /mnt/praxis
-praxis-postinstall /mnt/praxis
-```
-
-### Package and Desktop Commands
-
-```bash
-praxis-packages list
-praxis-packages show desktop xfce
-praxis-packages show bundle developer
-praxis-packages install --target /mnt/praxis --desktop xfce --bundle developer
-praxis-desktop list
-praxis-desktop start xfce
+praxis-disk /dev/vda /mnt/praxis
+praxis-install --hostname <name> /mnt/praxis
+mkinitrd /mnt/praxis
+praxis-chroot /mnt/praxis
+targetcheck /mnt/praxis
 ```
 
 ### Live Toolkit
 
 ```bash
+preflight [<target>]
 praxis-status
-praxis-preflight
 praxis-disk-report
 praxis-netcheck
 praxis-support
+praxis-postinstall <target>
 ```
+
+### Packages
+
+```bash
+praxis-packages list
+praxis-packages show desktop <name>
+praxis-packages show bundle <name>
+praxis-desktop list
+praxis-desktop start <name>
+```
+
+### Native Package Manager
+
+```bash
+praxis-pkg sync
+praxis-pkg list [repo]
+praxis-pkg info <id>
+praxis-pkg search <term>
+praxis-pkg install <id> [<id>...]
+praxis-pkg remove <id>
+praxis-pkg repos
+```
+
+Package identifiers: `dev.praxis.neovim`, `org.mozilla.firefox`.
+
+### Docs
+
+```bash
+praxis-help install
+praxis-help qemu
+praxis-help commands
+praxis-help packages
+praxis-help troubleshooting
+praxis-help first-boot
+praxis-help pax
+praxis-help changelog
+```
+
+---
 
 ## Packages and Desktop Profiles
 
-Praxis can stage extra software into the installed image while you install it.
-
-The install flow stays Praxis-owned:
-
-- you boot the Praxis live image
-- you mount the target yourself
-- you run `praxis-install`
-- Praxis folds the selected packages back into the installed image
-
-List available items:
+### List Available
 
 ```bash
 praxis-packages list
 praxis-packages list desktops
 praxis-packages list bundles
-```
-
-Inspect a single profile:
-
-```bash
 praxis-packages show desktop xfce
 praxis-packages show bundle developer
 ```
 
-Install direct package names:
+### Desktop Profiles
+
+`gnome`, `plasma`, `xfce`, `budgie`, `mate`, `lxqt`, `i3`, `openbox`
 
 ```bash
-praxis-install --hostname praxisbox --packages firefox,vlc,git /mnt/praxis
+praxis-install --hostname praxisvm --desktop xfce /mnt/praxis
 ```
 
-Apply packages to an already-mounted target:
+### Bundles
+
+`developer`, `internet`, `media`, `essentials`, `fonts`
 
 ```bash
-praxis-packages install --target /mnt/praxis --desktop xfce --bundle internet
-praxis-install --hostname praxisbox /mnt/praxis
+praxis-install --hostname praxisvm --bundle developer /mnt/praxis
 ```
+
+### Combined
+
+```bash
+praxis-install \
+  --hostname praxisvm \
+  --desktop xfce \
+  --bundle essentials \
+  --bundle developer \
+  /mnt/praxis
+```
+
+---
 
 ## First Boot
-
-After Praxis boots from the installed disk for the first time, verify the base
-system before customizing it.
-
-Useful first checks:
 
 ```bash
 hostname
 praxis-fetch
 praxis-status
-```
-
-Confirm:
-
-- the hostname matches the install choice
-- the kernel and release info look correct
-- the Praxis prompt and branding are present
-- the package layer looks ready in `praxis-status`
-
-If you installed a desktop profile or bundles:
-
-```bash
-cat /etc/praxis/packages.selected
-praxis-desktop list
-```
-
-Check networking:
-
-```bash
 praxis-netcheck
-```
-
-Inspect installed boot data:
-
-```bash
 ls /boot/praxis
-cat /boot/loader/loader.conf
+cat /boot/loader/entries/praxis.conf
 ```
+
+---
 
 ## Troubleshooting
 
-Quick commands:
+### Quick Checks
 
 ```bash
-praxis-preflight
+preflight
 praxis-status
-praxis-disk-report
-praxis-netcheck
 praxis-support
 ```
-
-### Target Root Is Not Mounted
-
-```bash
-findmnt /mnt/praxis
-findmnt /mnt/praxis/boot
-```
-
-Mount the root at `/mnt/praxis` and the EFI system partition at
-`/mnt/praxis/boot`.
 
 ### Target Check Fails
 
 ```bash
-praxis-target-check /mnt/praxis
+targetcheck /mnt/praxis
 ```
 
-That checks the kernel, initramfs, initramfs policy, loader entry, hostname,
-UUID fstab, root UUID consistency, localtime, locale config, machine-id, boot
-options, and install metadata.
+Read every line. Fix whatever is reported missing or wrong.
 
-### Package Or Desktop Install Fails
+### Limine: "[config file not found]"
+
+Limine searches these paths on the ESP:
+
+- `/boot/limine/limine.conf`
+- `/boot/limine.conf`
+- `/limine/limine.conf`
+- `/limine.conf`
+- `/EFI/BOOT/limine.conf` (UEFI)
+
+`praxis-install` writes all of these. In QEMU, `repair-qemu-esp.sh` also writes
+them on every `make qemu-installed`. If still missing, re-run `make qemu-full`.
+
+### Limine: Kernel Not Found
+
+```
+PANIC: linux: Failed to open kernel with path 'boot():/praxis/vmlinuz'
+```
+
+`/praxis/vmlinuz` on the ESP is placed by `mkinitrd`, not by the repair script.
+
+- **QEMU:** run `make qemu-full` then `make qemu-installed`.
+- **Real hardware:** re-run `mkinitrd /mnt/praxis` with the ESP still mounted.
+
+### QEMU: make qemu-installed Shows Kernel Missing
+
+`make qemu-installed` only calls `repair-qemu-esp.sh` — it does not stage the
+disk. You must run `make qemu-full` (or `make qemu-chroot`) first to get the
+kernel onto the ESP.
+
+---
+
+## Praxis Package Repository
+
+### Identifiers
+
+All packages use reverse-domain identifiers:
+
+```
+dev.praxis.neovim
+org.mozilla.firefox
+org.videolan.vlc
+```
+
+`dev.praxis.*` is the Praxis native namespace. Bare names like `firefox` are
+rejected by the tool and the PAX interpreter.
+
+### praxis-pkg
 
 ```bash
-praxis-packages list
-cat /mnt/praxis/etc/praxis/packages.selected
-tail -n 50 /mnt/praxis/var/log/pacman.log
+praxis-pkg sync
+praxis-pkg list
+praxis-pkg info dev.praxis.neovim
+praxis-pkg search editor
+praxis-pkg install dev.praxis.neovim org.mozilla.firefox
+praxis-pkg remove dev.praxis.neovim
+praxis-pkg repos
 ```
 
-Common reasons:
+### Repository Configuration
 
-- no working network in the live environment
-- invalid package or desktop profile name
+`/etc/praxis/repos.conf` — ini-style blocks with `name`, `url`, `enabled`,
+`signed`. Three repos ship by default: `praxis-core`, `praxis-extra`,
+`praxis-community`.
 
-### Network Looks Broken
+### Package Format
 
-```bash
-praxis-netcheck
-ip -o link show
-ip -o -4 addr show
-```
+`.prx` — gzip-compressed tar with a `PKGINFO` metadata file and a `data/`
+filesystem tree. Full spec: `docs/pkg-format.md`.
 
-### Need Logs Or A Report
-
-```bash
-praxis-support
-```
-
-That writes a compressed bundle to `/tmp`.
+---
 
 ## PAX
 
-PAX is the planned domain-specific language for Praxis.
+PAX is the domain-specific language for Praxis. It is not a general scripting
+language. Every step is written out. Nothing runs unless you wrote it.
 
-It is not a general programming language. It is meant for:
-
-- package installation
-- source compilation workflows
-- system configuration
-- hardware checks
-- boot and desktop setup
-- installer logic
-
-PAX file roles:
-
-- `.pax` for general config
-- `.pkg.pax` for package definitions
-- `.profile.pax` for install presets
-- `.boot.pax` for boot logic
+All PAX files use the `.pax` extension.
 
 ### Required Header
 
-Every PAX file starts with:
-
 ```text
-[.Praxis Config - <file purpose or config name> .praxis.pax./]
+[.Praxis Config - <label> .praxis.pax./]
 ```
 
-Example:
+### Types
 
-```text
-[.Praxis Config - packageinstall-config .praxis.pax./]
+```
+string   "text"
+int      42, -10
+bool     true, false
+symbol   xfce, good, finished
+path     config.desktop, hardware.status
+list     [ dev.praxis.git, dev.praxis.htop ]
 ```
 
-### Core Style
-
-- blocks use `{ }`
-- assignment uses `=`
-- comparisons use `==`
-- comments begin with `#`
-- strings use double quotes
-- booleans are `true` and `false`
-- bare words like `xfce`, `source`, `bad`, and `finished` are symbols
-
-### Example Files
-
-- `pax/examples/packageinstall-config.pax`
-- `pax/examples/workstation-config.profile.pax`
-- `pax/examples/liveboot-config.boot.pax`
-- `pax/examples/core-packages.profile.pax`
-- `pax/examples/source-pkg.pkg.pax`
-- `pax/examples/ricing-desktop.profile.pax`
-- `pax/examples/hardware-check.pax`
-- `pax/examples/core-system-config.pax`
-
-### PAX Starter Set
-
-Praxis also includes a broader default starter set:
-
-- `core-packages.profile.pax` for common software selection
-- `source-pkg.pkg.pax` for source-based package workflows through the Praxis source-pkg path
-- `ricing-desktop.profile.pax` for desktop and ricing setup
-- `hardware-check.pax` for hardware validation
-- `core-system-config.pax` for a general base Praxis config
-
-### Example PAX File
+### Binding
 
 ```pax
-[.Praxis Config - packageinstall-config .praxis.pax./]
+let   name = value      # immutable
+var   name = value      # mutable
+define NAME = value     # file-level constant
+```
 
-# Define the install target and the desktop that should be enabled.
-config "packageinstall-config"
-{
-    package = "xfce-base/xfce4-meta"
-    desktop = xfce
-    compile_mode = source
+### Conditions
+
+```pax
+if hardware.status == good { }
+if install.status != finished { }
+if not disk.status == error { }
+if hardware.status == good and net.status == up { }
+```
+
+### Iteration
+
+```pax
+let packages = [ dev.praxis.git, dev.praxis.htop ]
+each pkg in packages {
+    install package pkg
 }
+```
 
-# Probe the current machine before the install actions begin.
+### Package Identifiers in PAX
+
+```pax
+install package dev.praxis.neovim
+install package org.mozilla.firefox
+install bundle "essentials"
+install bundle "developer"
+```
+
+Bundles are quoted strings. Packages use reverse-domain identifiers (no quotes).
+
+### Key Actions
+
+```pax
 check hardware
-
-# Stop early if the hardware probe reports a failure.
-if hardware.status == bad
-{
-    print "Hardware failed."
-    stop
-}
-
-# Run the install workflow using values from the config block.
-install package config.package
-compile package config.package
-enable desktop config.desktop
-
-# Confirm success after the fake installer reports a finished state.
-if install.status == finished
-{
-    print "[XFCE] Installed!"
-}
+install package dev.praxis.neovim
+install bundle "essentials"
+install desktop xfce
+set hostname "praxisvm"
+set locale "en_US.UTF-8"
+set timezone "America/New_York"
+write "/etc/hostname" content "praxisvm\n"
+exec "locale-gen"
+mount "/dev/vda2" at "/mnt/praxis"
+format "/dev/vda1" as vfat
+service enable "NetworkManager"
+user create "alice"
+user add-group "alice" "wheel"
+bootloader install limine
+initramfs build "/mnt/praxis"
+require hardware.status == good
+assert install.status == finished "Install must complete."
+log "Step complete."
+warn "Proceeding without network."
+fail "Cannot continue: {disk.status}"
 ```
 
 ### Interpreter
 
-The first interpreter is a small C# console app split into:
-
-- Lexer
-- Parser
-- AST
-- Interpreter
-
-Expected usage when a .NET SDK is present:
-
 ```bash
-dotnet run --project pax/interpreter/PaxInterpreter.csproj -- pax/examples/packageinstall-config.pax
+dotnet run --project pax/interpreter/PaxInterpreter.csproj -- pax/examples/full-install.pax
 ```
+
+Full language reference: `pax/spec/PAX.md`
+
+### Example Files
+
+```
+pax/examples/packageinstall-config.pax   reference example
+pax/examples/full-install.pax            complete install flow
+pax/examples/disk-setup.pax             partitioning and formatting
+pax/examples/user-setup.pax             users and groups
+pax/examples/service-config.pax         service management
+pax/examples/workstation-config.pax     desktop + software preset
+pax/examples/core-packages.pax          core package profile
+pax/examples/source-pkg.pax             source build workflow
+```
+
+---
 
 ## Local Docs Path
 
-Inside the live image and installed target, Praxis keeps docs in:
+Inside the live image and installed target:
 
-```text
-/usr/share/doc/praxis
 ```
-
-That includes:
-
-- `README.md`
-- `INSTALL.md`
-- `QEMU.md`
-- `COMMANDS.md`
-- `PACKAGES.md`
-- `FIRST-BOOT.md`
-- `TROUBLESHOOTING.md`
+/usr/share/doc/praxis/
+  README.md
+  INSTALL.md
+  QEMU.md
+  COMMANDS.md
+  PACKAGES.md
+  FIRST-BOOT.md
+  TROUBLESHOOTING.md
+  DOC.md
+  CHANGELOG.md
+```

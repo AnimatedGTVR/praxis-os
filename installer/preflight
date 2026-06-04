@@ -107,7 +107,7 @@ for cmd in praxis-help praxis-install targetcheck praxis-status praxis-disk-repo
 done
 check_one_command "archive copy" bsdtar tar
 check_one_command "initramfs creation" bsdtar cpio
-for cmd in praxis-fetch praxis-netcheck praxis-support lsblk fdisk mkfs.vfat mke2fs bootctl fastfetch; do
+for cmd in praxis-fetch praxis-netcheck praxis-support praxis-disk lsblk fdisk mkfs.vfat mkfs.ext4 bootctl fastfetch; do
     check_optional_command "$cmd"
 done
 printf '\n'

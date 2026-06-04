@@ -1,4 +1,5 @@
 NAME=Praxis
-VERSION=0.1.0-dev
+VERSION=1.5.0
+CODENAME=Bedrock
 TAGLINE=A base Linux distro you can build on.
 BASE=Independent base distro

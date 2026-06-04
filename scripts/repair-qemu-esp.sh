@@ -79,8 +79,35 @@ case "$fstype" in
   *) echo "partition 1 is not a FAT ESP, got: ${fstype:-unknown}" >&2; exit 1 ;;
 esac
 
+root_part="${nbd_dev}p2"
+root_uuid="$(blkid -s UUID -o value "$root_part" 2>/dev/null || true)"
+
 mkdir -p "$target_root/EFI/BOOT"
 cp "$source_root/usr/share/praxis/boot/BOOTX64.EFI" "$target_root/EFI/BOOT/BOOTX64.EFI"
+
+limine_cmdline="rdinit=/init praxis.live=0 loglevel=3 console=tty0"
+if [[ -n "$root_uuid" ]]; then
+  limine_cmdline="root=UUID=${root_uuid} ${limine_cmdline}"
+fi
+
+cat > "$target_root/EFI/BOOT/limine.conf" <<EOF
+# Praxis - Limine bootloader configuration (Limine 12.x)
+timeout: 4
+default_entry: 1
+serial: yes
+
+/Praxis
+protocol: linux
+path: boot():/praxis/vmlinuz
+module_path: boot():/praxis/initramfs.cpio.gz
+cmdline: ${limine_cmdline}
+EOF
+
+mkdir -p "$target_root/boot/limine"
+cp "$target_root/EFI/BOOT/limine.conf" "$target_root/boot/limine/limine.conf"
+cp "$target_root/EFI/BOOT/limine.conf" "$target_root/boot/limine.conf"
+cp "$target_root/EFI/BOOT/limine.conf" "$target_root/limine.conf"
+
 sync
 umount "$target_root"
 rmdir "$target_root" 2>/dev/null || true
@@ -88,4 +115,4 @@ target_root=""
 disconnect_nbd "$nbd_dev"
 nbd_dev=""
 
-printf 'Repaired QEMU ESP fallback: %s/EFI/BOOT/BOOTX64.EFI\n' "$boot_part"
+printf 'Repaired QEMU ESP: BOOTX64.EFI + limine.conf (root UUID: %s)\n' "${root_uuid:-unknown}"

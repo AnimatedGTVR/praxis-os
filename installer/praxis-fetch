@@ -51,14 +51,156 @@ if command -v fastfetch >/dev/null 2>&1; then
         fi
         exec fastfetch --config "${PRAXIS_FASTFETCH_CONFIG}" "$@"
     fi
-
     if [ -r "${PRAXIS_LOGO_FILE}" ]; then
         exec fastfetch --file "${PRAXIS_LOGO_FILE}" "$@"
     fi
 fi
 
-if [ -r "${PRAXIS_TEXT_FILE}" ]; then
-    exec cat "${PRAXIS_TEXT_FILE}"
+# ── Built-in fetch (no fastfetch) ─────────────────────────────────────────────
+
+C0='\033[0m'
+BOLD='\033[1m'
+DIM='\033[2m'
+CYAN='\033[36m'
+BCYAN='\033[1;36m'
+
+_os() {
+    if [ -r /etc/os-release ]; then
+        _n="$(grep '^PRETTY_NAME=' /etc/os-release 2>/dev/null | head -1 2>/dev/null | sed 's/PRETTY_NAME=//;s/"//g' 2>/dev/null || true)"
+        printf '%s' "${_n:-Linux}"
+    else
+        printf 'Linux'
+    fi
+}
+
+_kernel() {
+    uname -r 2>/dev/null || printf 'unknown'
+}
+
+_uptime() {
+    if [ -r /proc/uptime ]; then
+        _secs="$(awk '{print int($1)}' /proc/uptime 2>/dev/null || true)"
+        [ -n "${_secs}" ] || { printf 'unknown'; return; }
+        _d=$(( _secs / 86400 ))
+        _h=$(( (_secs % 86400) / 3600 ))
+        _m=$(( (_secs % 3600) / 60 ))
+        if [ "${_d}" -gt 0 ]; then
+            printf '%dd %dh %dm' "${_d}" "${_h}" "${_m}"
+        elif [ "${_h}" -gt 0 ]; then
+            printf '%dh %dm' "${_h}" "${_m}"
+        else
+            printf '%dm' "${_m}"
+        fi
+    else
+        printf 'unknown'
+    fi
+}
+
+_shell() {
+    if [ -n "${SHELL:-}" ]; then
+        _b="${SHELL##*/}"
+        printf '%s' "${_b}"
+    else
+        printf 'sh'
+    fi
+}
+
+_cpu() {
+    if [ -r /proc/cpuinfo ]; then
+        grep 'model name' /proc/cpuinfo 2>/dev/null | head -1 2>/dev/null \
+            | sed 's/.*: //;s/(R)//g;s/(TM)//g;s/  */ /g;s/^ //;s/ $//' 2>/dev/null \
+            || uname -m
+    else
+        uname -m
+    fi
+}
+
+_mem() {
+    if [ -r /proc/meminfo ]; then
+        awk '
+            /MemTotal/    { t=$2 }
+            /MemAvailable/{ a=$2 }
+            END { printf "%dMiB / %dMiB", (t-a)/1024, t/1024 }
+        ' /proc/meminfo 2>/dev/null || printf 'unknown'
+    else
+        printf 'unknown'
+    fi
+}
+
+_disk() {
+    df -h / 2>/dev/null | awk 'NR==2{printf "%s / %s (%s)", $3, $2, $5}' 2>/dev/null \
+        || printf 'unknown'
+}
+
+_color_row() {
+    _base="$1"
+    _i=0
+    while [ "${_i}" -lt 8 ]; do
+        printf "\033[%dm   ${C0}" "$(( _base + _i ))"
+        _i=$(( _i + 1 ))
+    done
+}
+
+# Collect info once
+_V_OS="$(_os)"
+_V_KERNEL="$(_kernel)"
+_V_UPTIME="$(_uptime)"
+_V_SHELL="$(_shell)"
+_V_CPU="$(_cpu)"
+_V_MEM="$(_mem)"
+_V_DISK="$(_disk)"
+
+# Info lines indexed 1-based (logo has 16 lines)
+_info_line() {
+    case "$1" in
+        1)  printf "${BOLD}${BCYAN}Praxis${C0}" ;;
+        2)  printf "${DIM}Shell-first. Clear. Yours to shape.${C0}" ;;
+        3)  printf "${DIM}────────────────────────────${C0}" ;;
+        4)  printf "${BCYAN}%-10s${C0}  %s" "OS"      "${_V_OS}" ;;
+        5)  printf "${BCYAN}%-10s${C0}  %s" "Kernel"  "${_V_KERNEL}" ;;
+        6)  printf "${BCYAN}%-10s${C0}  %s" "Uptime"  "${_V_UPTIME}" ;;
+        7)  printf "${BCYAN}%-10s${C0}  %s" "Shell"   "${_V_SHELL}" ;;
+        8)  printf "${DIM}────────────────────────────${C0}" ;;
+        9)  printf "${BCYAN}%-10s${C0}  %s" "CPU"     "${_V_CPU}" ;;
+        10) printf "${BCYAN}%-10s${C0}  %s" "Memory"  "${_V_MEM}" ;;
+        11) printf "${BCYAN}%-10s${C0}  %s" "Disk (/)" "${_V_DISK}" ;;
+        12) printf "${DIM}────────────────────────────${C0}" ;;
+        15) _color_row 40 ;;
+        16) _color_row 100 ;;
+        *)  printf '' ;;
+    esac
+}
+
+printf '\n'
+
+if [ -r "${PRAXIS_LOGO_FILE}" ]; then
+    _n=0
+    while IFS= read -r _line; do
+        _n=$(( _n + 1 ))
+        _right="$(_info_line "${_n}")"
+        if [ -n "${_right}" ]; then
+            printf "  ${CYAN}%s${C0}   %b\n" "${_line}" "${_right}"
+        else
+            printf "  ${CYAN}%s${C0}\n" "${_line}"
+        fi
+    done < "${PRAXIS_LOGO_FILE}"
+else
+    printf "  ${BCYAN}Praxis${C0}  ${DIM}Shell-first. Clear. Yours to shape.${C0}\n\n"
+    printf "  ${DIM}────────────────────────────${C0}\n"
+    printf "  ${BCYAN}%-10s${C0}  %s\n" "OS"       "${_V_OS}"
+    printf "  ${BCYAN}%-10s${C0}  %s\n" "Kernel"   "${_V_KERNEL}"
+    printf "  ${BCYAN}%-10s${C0}  %s\n" "Uptime"   "${_V_UPTIME}"
+    printf "  ${BCYAN}%-10s${C0}  %s\n" "Shell"    "${_V_SHELL}"
+    printf "  ${DIM}────────────────────────────${C0}\n"
+    printf "  ${BCYAN}%-10s${C0}  %s\n" "CPU"      "${_V_CPU}"
+    printf "  ${BCYAN}%-10s${C0}  %s\n" "Memory"   "${_V_MEM}"
+    printf "  ${BCYAN}%-10s${C0}  %s\n" "Disk (/)" "${_V_DISK}"
+    printf "  ${DIM}────────────────────────────${C0}\n\n"
+    printf '  '
+    _color_row 40
+    printf '\n  '
+    _color_row 100
+    printf '\n'
 fi
 
-printf '%s\n' "${PRAXIS_NAME:-Praxis}"
+printf '\n'

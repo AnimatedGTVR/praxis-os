@@ -1,18 +1,33 @@
 # Installing Praxis
 
-No wizard. No partitioner. No defaults. You do each step yourself.
+No wizard. No automounter. You choose the layout, mount the target, and run
+the install commands.
 
-## Boot
+## Boot the Live Environment
 
-Build the ISO and boot it:
+In QEMU:
 
 ```bash
+make iso
 make qemu-install
 ```
 
-The live environment drops to a shell. No prompt. No menu.
+On real hardware: write `build/praxis.iso` to a USB drive and boot it.
 
-## Partition
+## Partition and Format
+
+### Option A — praxis-disk (recommended)
+
+```bash
+praxis-disk /dev/vda /mnt/praxis
+```
+
+Wipes the disk, creates a GPT with a 512M EFI system partition and a root
+partition, formats both (`vfat` + `ext4`), and mounts everything at
+`/mnt/praxis` and `/mnt/praxis/boot`. Supports `--boot-size <size>` and
+`--dry-run`.
+
+### Option B — Manual
 
 ```bash
 lsblk
@@ -29,16 +44,13 @@ n 2      second partition, remaining space
 w        write
 ```
 
-## Format
+Format and mount:
 
 ```bash
 mkfs.vfat -F32 -n BOOT /dev/vda1
 mkfs.ext4 -L ROOT /dev/vda2
-```
 
-## Mount
-
-```bash
+mkdir -p /mnt/praxis
 mount /dev/vda2 /mnt/praxis
 mkdir -p /mnt/praxis/boot
 mount /dev/vda1 /mnt/praxis/boot
@@ -46,119 +58,74 @@ mount /dev/vda1 /mnt/praxis/boot
 
 The EFI partition must be mounted at `<target>/boot` before you install.
 
-## Stage 1: Deploy rootfs
+## Stage 1: Deploy Rootfs
 
 ```bash
 praxis-install --hostname <name> /mnt/praxis
 ```
 
-Copies the live rootfs to the target. Requires `--hostname`. Requires both partitions mounted and `/boot` to be vfat. Stamps `install-stage: rootfs`.
+Copies the live rootfs to the target. Requires `--hostname`. Requires both
+partitions mounted with `/boot` as vfat. Stamps `install-stage: rootfs`.
 
-## Write fstab
+`praxis-install` writes the following automatically — you can review and
+override any of them afterward:
 
-Get UUIDs:
+| File | Content |
+|------|---------|
+| `/etc/fstab` | UUID mounts for `/` and `/boot` from the live mounts |
+| `/etc/machine-id` | Random 32-hex-char ID |
+| `/etc/locale.conf` | `LANG=en_US.UTF-8` |
+| `/etc/localtime` | Symlink to `/usr/share/zoneinfo/UTC` |
+| `/etc/praxis/initramfs.conf` | Initramfs policy required by `mkinitrd` |
+| `/boot/EFI/BOOT/BOOTX64.EFI` | Limine UEFI fallback binary |
+| `/boot/limine.conf` + `/boot/limine/limine.conf` + `/boot/EFI/BOOT/limine.conf` | Limine bootloader config |
+| `/boot/loader/loader.conf` + `/boot/loader/entries/praxis.conf` | systemd-boot entries |
+
+## Override Defaults (Optional)
+
+**Timezone** (if not UTC):
 
 ```bash
+ln -sf /usr/share/zoneinfo/Region/City /mnt/praxis/etc/localtime
+```
+
+**Locale** (if not en_US.UTF-8):
+
+```bash
+printf 'LANG=xx_XX.UTF-8\n' > /mnt/praxis/etc/locale.conf
+```
+
+**Verify fstab** — auto-generated from live mounts, should be correct:
+
+```bash
+cat /mnt/praxis/etc/fstab
 blkid
 ```
 
-Write `/mnt/praxis/etc/fstab` yourself. Device paths and labels are not enough;
-Praxis requires UUID mounts for both `/` and `/boot`.
-
-```text
-UUID=<root-uuid>  /      ext4  defaults  0  1
-UUID=<boot-uuid>  /boot  vfat  defaults  0  2
-```
-
-`mkinitrd` will not run unless the target fstab mounts both `/` and `/boot` by
-UUID.
-
-## Write initramfs policy
-
-Write `/mnt/praxis/etc/praxis/initramfs.conf` yourself:
-
-```text
-INITRAMFS_FORMAT=newc
-INITRAMFS_COMPRESSION=gzip
-INITRAMFS_OWNER=manual
-INITRAMFS_ROOT=disk
-```
-
-`mkinitrd` refuses to run unless this policy file exists and matches the
-supported initramfs format. `INITRAMFS_ROOT=disk` builds a small initramfs that
-mounts the real root filesystem from `root=UUID=...`; use `target` only when
-you intentionally want the whole target packed into the initramfs.
-
-## Stage 2: Build initramfs
+## Stage 2: Build Initramfs
 
 ```bash
 mkinitrd /mnt/praxis
 ```
 
-Packs the target rootfs into a cpio initramfs and copies the kernel. Requires stage 1 and a written fstab. Stamps `install-stage: initrd`.
+Packs the initramfs and copies the kernel to `/boot/praxis/`. Requires stage 1
+and a UUID fstab for both `/` and `/boot`. Stamps `install-stage: initrd`.
 
-## Stage 3: Configure inside the target
+## Stage 3: Configure Inside the Target
 
 ```bash
 praxis-chroot /mnt/praxis
 ```
 
-Binds `/proc`, `/sys`, `/dev`, `/run` and drops you into a shell inside the target. Do at minimum:
+Binds `/proc`, `/sys`, `/dev`, `/run` and drops you into a shell in the target.
+At minimum, set a root password:
 
 ```sh
 passwd
-ln -sf /usr/share/zoneinfo/Region/City /etc/localtime
-printf 'LANG=en_US.UTF-8\n' > /etc/locale.conf
-head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n' > /etc/machine-id
 exit
 ```
 
-`praxis-chroot` stamps `install-stage: chroot` on clean exit. `targetcheck` will refuse to pass if you skip this step, leave `/etc/localtime` missing, leave `/etc/locale.conf` missing, or leave `/etc/machine-id` missing or invalid.
-
-## Write boot entries
-
-After chroot exits, write the bootloader configuration manually.
-
-Create directories:
-
-```bash
-mkdir -p /mnt/praxis/boot/loader/entries
-```
-
-Write `/mnt/praxis/boot/loader/loader.conf`:
-
-```text
-default praxis
-timeout 4
-```
-
-Write `/mnt/praxis/boot/loader/entries/praxis.conf`:
-
-```text
-title   Praxis
-linux   /praxis/vmlinuz
-initrd  /praxis/initramfs.cpio.gz
-options root=UUID=<root-uuid> rdinit=/init praxis.live=0 loglevel=3
-```
-
-The boot entry must name the root filesystem by UUID and must include
-`rdinit=/init` and `praxis.live=0`. The `root=UUID=...` value must exactly
-match the root UUID in `/mnt/praxis/etc/fstab`.
-
-Install a bootloader. With `bootctl`:
-
-```bash
-bootctl --esp-path=/mnt/praxis/boot install
-```
-
-Or copy the Limine EFI fallback:
-
-```bash
-mkdir -p /mnt/praxis/boot/EFI/BOOT
-cp /usr/share/praxis/boot/BOOTX64.EFI /mnt/praxis/boot/EFI/BOOT/BOOTX64.EFI
-```
-
-If using Limine, write `/mnt/praxis/boot/limine.conf` as well.
+`praxis-chroot` stamps `install-stage: chroot` on clean exit.
 
 ## Verify
 
@@ -166,9 +133,10 @@ If using Limine, write `/mnt/praxis/boot/limine.conf` as well.
 targetcheck /mnt/praxis
 ```
 
-Fails if chroot was skipped, kernel or initramfs is missing, boot entries are absent, fstab lacks UUID mounts, the boot root UUID does not match fstab, boot options are incomplete, initramfs policy is missing, localtime is missing, locale configuration is missing, or machine-id is invalid.
+Fails if the chroot stage, kernel, initramfs, fstab UUIDs, boot entries, Limine
+config, locale, localtime, or machine-id is absent or invalid.
 
-## Unmount and reboot
+## Unmount and Reboot
 
 ```bash
 sync
@@ -181,3 +149,5 @@ In QEMU:
 ```bash
 make qemu-installed
 ```
+
+On real hardware: remove the live USB and reboot.

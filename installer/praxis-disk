@@ -1,0 +1,197 @@
+#!/bin/sh
+
+export PATH="/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+DEVICE=""
+TARGET=""
+BOOT_SIZE="${PRAXIS_BOOT_SIZE:-512M}"
+DRY_RUN=0
+
+usage() {
+    printf 'usage: praxis-disk <device> <target> [--boot-size SIZE] [--dry-run]\n'
+    printf '\n'
+    printf 'Partition, format, and mount a disk for Praxis installation.\n'
+    printf '\n'
+    printf '  device      Block device to partition (e.g. /dev/vda)\n'
+    printf '  target      Mount root at this path (e.g. /mnt/praxis)\n'
+    printf '  --boot-size SIZE  EFI partition size (default: 512M)\n'
+    printf '  --dry-run   Print commands without running them\n'
+    printf '\n'
+    printf 'Steps performed:\n'
+    printf '  1. GPT partition table: EFI (%s) + Linux root (remaining)\n' "${BOOT_SIZE}"
+    printf '  2. mkfs.vfat -F32 on partition 1\n'
+    printf '  3. mkfs.ext4 on partition 2\n'
+    printf '  4. mkdir -p <target> <target>/boot\n'
+    printf '  5. mount partition 2 -> <target>\n'
+    printf '  6. mount partition 1 -> <target>/boot\n'
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -h|--help)
+            usage; exit 0 ;;
+        --dry-run)
+            DRY_RUN=1 ;;
+        --boot-size)
+            shift
+            [ "$#" -gt 0 ] || { printf 'missing value for --boot-size\n' >&2; exit 1; }
+            BOOT_SIZE="$1"
+            ;;
+        -*)
+            printf 'unknown option: %s\n' "$1" >&2; exit 1 ;;
+        *)
+            if [ -z "${DEVICE}" ]; then
+                DEVICE="$1"
+            elif [ -z "${TARGET}" ]; then
+                TARGET="$1"
+            else
+                printf 'unexpected argument: %s\n' "$1" >&2; exit 1
+            fi
+            ;;
+    esac
+    shift
+done
+
+[ -n "${DEVICE}" ] || { usage >&2; exit 1; }
+[ -n "${TARGET}" ] || { usage >&2; exit 1; }
+
+case "${DEVICE}" in
+    /dev/*) ;;
+    *) printf 'device must be an absolute /dev/ path: %s\n' "${DEVICE}" >&2; exit 1 ;;
+esac
+
+case "${TARGET}" in
+    /*) ;;
+    *) printf 'target must be an absolute path: %s\n' "${TARGET}" >&2; exit 1 ;;
+esac
+
+[ "${TARGET}" != "/" ] || { printf 'refusing to use / as target\n' >&2; exit 1; }
+
+# Derive partition device names (handles /dev/vda → /dev/vda1, /dev/nvme0n1 → /dev/nvme0n1p1)
+case "${DEVICE}" in
+    *[0-9])
+        PART_BOOT="${DEVICE}p1"
+        PART_ROOT="${DEVICE}p2"
+        ;;
+    *)
+        PART_BOOT="${DEVICE}1"
+        PART_ROOT="${DEVICE}2"
+        ;;
+esac
+
+run() {
+    if [ "${DRY_RUN}" = "1" ]; then
+        printf '[dry-run] %s\n' "$*"
+    else
+        printf '[run] %s\n' "$*"
+        "$@"
+    fi
+}
+
+check_commands() {
+    for _cmd in mkfs.vfat mkfs.ext4 mount mkdir; do
+        command -v "${_cmd}" >/dev/null 2>&1 || {
+            printf 'missing required command: %s\n' "${_cmd}" >&2
+            exit 1
+        }
+    done
+    if ! command -v sfdisk >/dev/null 2>&1 && ! command -v fdisk >/dev/null 2>&1; then
+        printf 'missing required command: sfdisk or fdisk\n' >&2
+        exit 1
+    fi
+}
+
+do_partition() {
+    if command -v sfdisk >/dev/null 2>&1; then
+        if command -v wipefs >/dev/null 2>&1; then
+            wipefs -a "${DEVICE}"
+        fi
+        sfdisk "${DEVICE}" <<SFDISK_EOF
+label: gpt
+,${BOOT_SIZE},U,*
+,,L
+SFDISK_EOF
+    else
+        # fdisk fallback (BusyBox or util-linux)
+        # g=new GPT, n=part 1, t=EFI type (1), n=part 2, w=write
+        printf 'g\nn\n1\n\n+%s\nt\n1\n1\nn\n2\n\n\nw\n' "${BOOT_SIZE}" | fdisk "${DEVICE}"
+    fi
+}
+
+praxis_header "Disk Setup"
+
+if [ "${DRY_RUN}" != "1" ]; then
+    [ -b "${DEVICE}" ] || { printf 'not a block device: %s\n' "${DEVICE}" >&2; exit 1; }
+    check_commands
+
+    if praxis_is_mountpoint "${TARGET}" 2>/dev/null; then
+        printf 'target already mounted: %s\n' "${TARGET}" >&2
+        printf 'Run: umount -R %s\n' "${TARGET}" >&2
+        exit 1
+    fi
+fi
+
+printf 'Device : %s\n' "${DEVICE}"
+printf 'Target : %s\n' "${TARGET}"
+printf 'Boot   : %s (%s)\n' "${PART_BOOT}" "${BOOT_SIZE}"
+printf 'Root   : %s (remaining)\n' "${PART_ROOT}"
+printf '\n'
+
+# ── 1. Wipe and partition ──────────────────────────────────────────────────────
+
+printf 'Partitioning %s ...\n' "${DEVICE}"
+run do_partition
+
+# ── 2. Format ─────────────────────────────────────────────────────────────────
+
+printf 'Formatting %s as vfat ...\n' "${PART_BOOT}"
+run mkfs.vfat -F32 -n BOOT "${PART_BOOT}"
+
+printf 'Formatting %s as ext4 ...\n' "${PART_ROOT}"
+run mkfs.ext4 -L ROOT "${PART_ROOT}"
+
+# ── 3. Create mount points ─────────────────────────────────────────────────────
+
+printf 'Creating mount points ...\n'
+run mkdir -p "${TARGET}"
+run mkdir -p "${TARGET}/boot"
+
+# ── 4. Mount ──────────────────────────────────────────────────────────────────
+
+printf 'Mounting %s -> %s ...\n' "${PART_ROOT}" "${TARGET}"
+run mount "${PART_ROOT}" "${TARGET}"
+
+printf 'Mounting %s -> %s/boot ...\n' "${PART_BOOT}" "${TARGET}"
+run mount "${PART_BOOT}" "${TARGET}/boot"
+
+# ── 5. Summary ────────────────────────────────────────────────────────────────
+
+printf '\n'
+if [ "${DRY_RUN}" = "1" ]; then
+    printf 'Dry run complete.\n'
+    printf 'Next: praxis-install --hostname <name> %s\n' "${TARGET}"
+else
+    printf 'Disk ready: %s\n' "${TARGET}"
+    printf 'Next: praxis-install --hostname <name> %s\n' "${TARGET}"
+fi

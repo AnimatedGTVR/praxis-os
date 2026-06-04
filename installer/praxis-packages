@@ -115,6 +115,15 @@ append_csv_values() {
         sed '/^$/d' >> "${temp_file}"
 }
 
+append_default_providers() {
+    packages_file="$1"
+
+    if grep -qx 'networkmanager' "${packages_file}" &&
+        ! grep -Eq '^(iptables|iptables-legacy)$' "${packages_file}"; then
+        printf '%s\n' "iptables" >> "${packages_file}"
+    fi
+}
+
 ensure_pacman_tree() {
     target_root="$1"
 
@@ -188,6 +197,33 @@ pacman_hook_args() {
     if [ "${PRAXIS_PACMAN_DISABLE_HOOKS:-0}" = "1" ]; then
         printf ' --hookdir %s' "${PRAXIS_PACMAN_EMPTY_HOOKDIR}"
     fi
+}
+
+remove_live_compat_payload() {
+    target_root="$1"
+
+    [ "${target_root}" != "/" ] || return 0
+
+    for live_path in \
+        /usr/bin/sfdisk \
+        /usr/bin/wipefs \
+        /usr/lib/ld-linux-x86-64.so.2 \
+        /usr/lib/libc.so.6 \
+        /usr/lib/libncursesw.so.6 \
+        /usr/lib/libncursesw.so.6.6 \
+        /usr/lib/libreadline.so.8 \
+        /usr/lib/libreadline.so.8.3 \
+        /usr/lib/libblkid.so.1 \
+        /usr/lib/libblkid.so.1.1.0 \
+        /usr/lib/libfdisk.so.1 \
+        /usr/lib/libfdisk.so.1.1.0 \
+        /usr/lib/libsmartcols.so.1 \
+        /usr/lib/libsmartcols.so.1.1.0 \
+        /usr/lib/libuuid.so.1 \
+        /usr/lib/libuuid.so.1.3.0
+    do
+        rm -f "${target_root}${live_path}"
+    done
 }
 
 install_target_packages() {
@@ -264,6 +300,8 @@ install_target_packages() {
     if [ "${target_root}" = "/" ]; then
         pacman -Sy --noconfirm --needed ${assume_args} ${hook_args} $(cat "${package_args_file}")
     else
+        remove_live_compat_payload "${target_root}"
+
         pacman_cache_dir="${target_root}/var/cache/pacman/pkg"
         if [ -d /var/cache/pacman/pkg ]; then
             pacman_cache_dir="/var/cache/pacman/pkg"
@@ -408,6 +446,7 @@ case "${ACTION}" in
         fi
 
         append_csv_values "${extra_names}" "${packages_file}"
+        append_default_providers "${packages_file}"
 
         install_target_packages "${target_root}" "${desktop_name}" "${bundle_names}" "${extra_names}" "${packages_file}"
         ;;

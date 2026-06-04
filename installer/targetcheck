@@ -24,8 +24,8 @@ fi
 TARGET_ROOT="${1:-}"
 
 usage() {
-    printf '%s\n' "usage: praxis-target-check <target-root>"
-    printf '%s\n' "example: praxis-target-check /mnt/praxis"
+    printf '%s\n' "usage: targetcheck <target-root>"
+    printf '%s\n' "example: targetcheck /mnt/praxis"
 }
 
 print_field() {

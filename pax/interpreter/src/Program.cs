@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Praxis.Pax;
 
@@ -39,6 +40,8 @@ internal static class Program
     }
 }
 
+// ── Header ────────────────────────────────────────────────────────────────────
+
 internal sealed record PaxHeader(string Raw, string Label, string Body, int BodyStartLine)
 {
     public static PaxHeader Parse(string source)
@@ -48,19 +51,12 @@ internal sealed record PaxHeader(string Raw, string Label, string Body, int Body
 
         for (var index = 0; index < lines.Length; index++)
         {
-            if (string.IsNullOrWhiteSpace(lines[index]))
-            {
-                continue;
-            }
-
+            if (string.IsNullOrWhiteSpace(lines[index])) continue;
             headerIndex = index;
             break;
         }
 
-        if (headerIndex < 0)
-        {
-            throw new PaxException("missing Praxis header");
-        }
+        if (headerIndex < 0) throw new PaxException("missing Praxis header");
 
         var headerLine = lines[headerIndex].Trim();
         const string prefix = "[.Praxis Config - ";
@@ -68,37 +64,40 @@ internal sealed record PaxHeader(string Raw, string Label, string Body, int Body
 
         if (!headerLine.StartsWith(prefix, StringComparison.Ordinal) ||
             !headerLine.EndsWith(suffix, StringComparison.Ordinal))
-        {
             throw new PaxException("invalid Praxis header; expected '[.Praxis Config - <label> .praxis.pax./]'");
-        }
 
         var label = headerLine[prefix.Length..^suffix.Length].Trim();
         if (string.IsNullOrWhiteSpace(label))
-        {
             throw new PaxException("Praxis header label cannot be empty");
-        }
 
         var body = string.Join('\n', lines.Skip(headerIndex + 1));
         return new PaxHeader(headerLine, label, body, headerIndex + 2);
     }
 }
 
-// Lexer
+// ── Tokens ────────────────────────────────────────────────────────────────────
 
 internal enum TokenType
 {
     Identifier,
     String,
+    Integer,
     Assign,
     EqualsEquals,
+    NotEquals,
     Dot,
+    Comma,
     LBrace,
     RBrace,
+    LBracket,
+    RBracket,
     NewLine,
     EndOfFile
 }
 
 internal readonly record struct Token(TokenType Type, string Text, int Line, int Column);
+
+// ── Lexer ─────────────────────────────────────────────────────────────────────
 
 internal sealed class Lexer
 {
@@ -120,80 +119,42 @@ internal sealed class Lexer
         {
             var current = Current();
 
-            if (current == ' ' || current == '\t')
-            {
-                Advance();
-                continue;
-            }
-
-            if (current == '\r')
-            {
-                Advance();
-                continue;
-            }
-
-            if (current == '\n')
-            {
-                AddToken(TokenType.NewLine, "\n");
-                AdvanceLine();
-                continue;
-            }
-
-            if (current == '#')
-            {
-                SkipComment();
-                continue;
-            }
-
-            if (current == '{')
-            {
-                AddToken(TokenType.LBrace, "{");
-                Advance();
-                continue;
-            }
-
-            if (current == '}')
-            {
-                AddToken(TokenType.RBrace, "}");
-                Advance();
-                continue;
-            }
-
-            if (current == '.')
-            {
-                AddToken(TokenType.Dot, ".");
-                Advance();
-                continue;
-            }
+            if (current is ' ' or '\t') { Advance(); continue; }
+            if (current == '\r') { Advance(); continue; }
+            if (current == '\n') { AddToken(TokenType.NewLine, "\n"); AdvanceLine(); continue; }
+            if (current == '#') { SkipComment(); continue; }
+            if (current == '{') { AddToken(TokenType.LBrace, "{"); Advance(); continue; }
+            if (current == '}') { AddToken(TokenType.RBrace, "}"); Advance(); continue; }
+            if (current == '[') { AddToken(TokenType.LBracket, "["); Advance(); continue; }
+            if (current == ']') { AddToken(TokenType.RBracket, "]"); Advance(); continue; }
+            if (current == ',') { AddToken(TokenType.Comma, ","); Advance(); continue; }
+            if (current == '.') { AddToken(TokenType.Dot, "."); Advance(); continue; }
 
             if (current == '=')
             {
-                if (Peek() == '=')
-                {
-                    AddToken(TokenType.EqualsEquals, "==");
-                    Advance();
-                    Advance();
-                }
-                else
-                {
-                    AddToken(TokenType.Assign, "=");
-                    Advance();
-                }
-
+                if (Peek() == '=') { AddToken(TokenType.EqualsEquals, "=="); Advance(); Advance(); }
+                else { AddToken(TokenType.Assign, "="); Advance(); }
                 continue;
             }
 
-            if (current == '"')
+            if (current == '!' && Peek() == '=')
             {
-                ReadString();
+                AddToken(TokenType.NotEquals, "!=");
+                Advance(); Advance();
                 continue;
             }
 
-            if (IsIdentifierStart(current))
+            if (current == '"') { ReadString(); continue; }
+
+            if (current == '-' && char.IsDigit(Peek()))
             {
-                ReadIdentifier();
+                ReadInteger();
                 continue;
             }
+
+            if (char.IsDigit(current)) { ReadInteger(); continue; }
+
+            if (IsIdentifierStart(current)) { ReadIdentifier(); continue; }
 
             throw Error($"unexpected character '{current}'");
         }
@@ -207,14 +168,18 @@ internal sealed class Lexer
         var start = _index;
         var line = _line;
         var column = _column;
+        while (!IsAtEnd() && IsIdentifierPart(Current())) Advance();
+        _tokens.Add(new Token(TokenType.Identifier, _source[start.._index], line, column));
+    }
 
-        while (!IsAtEnd() && IsIdentifierPart(Current()))
-        {
-            Advance();
-        }
-
-        var text = _source[start.._index];
-        _tokens.Add(new Token(TokenType.Identifier, text, line, column));
+    private void ReadInteger()
+    {
+        var start = _index;
+        var line = _line;
+        var column = _column;
+        if (Current() == '-') Advance();
+        while (!IsAtEnd() && char.IsDigit(Current())) Advance();
+        _tokens.Add(new Token(TokenType.Integer, _source[start.._index], line, column));
     }
 
     private void ReadString()
@@ -222,731 +187,1047 @@ internal sealed class Lexer
         var line = _line;
         var column = _column;
         Advance();
-
         var builder = new StringBuilder();
         while (!IsAtEnd() && Current() != '"')
         {
-            var current = Current();
-            if (current == '\\')
+            var c = Current();
+            if (c == '\\')
             {
                 Advance();
-                if (IsAtEnd())
-                {
-                    throw Error("unterminated string escape");
-                }
-
-                var escaped = Current();
-                builder.Append(escaped switch
-                {
-                    '"' => '"',
-                    '\\' => '\\',
-                    'n' => '\n',
-                    't' => '\t',
-                    _ => escaped
-                });
+                if (IsAtEnd()) throw Error("unterminated string escape");
+                builder.Append(Current() switch { '"' => '"', '\\' => '\\', 'n' => '\n', 't' => '\t', var x => x });
                 Advance();
                 continue;
             }
-
-            if (current == '\n')
-            {
-                throw Error("unterminated string");
-            }
-
-            builder.Append(current);
+            if (c == '\n') throw Error("unterminated string");
+            builder.Append(c);
             Advance();
         }
-
-        if (IsAtEnd())
-        {
-            throw Error("unterminated string");
-        }
-
+        if (IsAtEnd()) throw Error("unterminated string");
         Advance();
         _tokens.Add(new Token(TokenType.String, builder.ToString(), line, column));
     }
 
     private void SkipComment()
     {
-        while (!IsAtEnd() && Current() != '\n')
-        {
-            Advance();
-        }
+        while (!IsAtEnd() && Current() != '\n') Advance();
     }
 
-    private char Current()
-    {
-        return _source[_index];
-    }
-
-    private char Peek()
-    {
-        var next = _index + 1;
-        if (next >= _source.Length)
-        {
-            return '\0';
-        }
-
-        return _source[next];
-    }
-
-    private bool IsAtEnd()
-    {
-        return _index >= _source.Length;
-    }
-
-    private void Advance()
-    {
-        _index++;
-        _column++;
-    }
-
-    private void AdvanceLine()
-    {
-        _index++;
-        _line++;
-        _column = 1;
-    }
-
-    private void AddToken(TokenType type, string text)
-    {
-        _tokens.Add(new Token(type, text, _line, _column));
-    }
-
-    private static bool IsIdentifierStart(char value)
-    {
-        return char.IsLetter(value) || value == '_';
-    }
-
-    private static bool IsIdentifierPart(char value)
-    {
-        return char.IsLetterOrDigit(value) || value == '_' || value == '-';
-    }
-
-    private PaxException Error(string message)
-    {
-        return new PaxException($"{message} at line {_line}, column {_column}");
-    }
+    private char Current() => _source[_index];
+    private char Peek() { var n = _index + 1; return n >= _source.Length ? '\0' : _source[n]; }
+    private bool IsAtEnd() => _index >= _source.Length;
+    private void Advance() { _index++; _column++; }
+    private void AdvanceLine() { _index++; _line++; _column = 1; }
+    private void AddToken(TokenType type, string text) => _tokens.Add(new Token(type, text, _line, _column));
+    private static bool IsIdentifierStart(char v) => char.IsLetter(v) || v == '_';
+    private static bool IsIdentifierPart(char v) => char.IsLetterOrDigit(v) || v == '_' || v == '-';
+    private PaxException Error(string message) => new($"{message} at line {_line}, column {_column}");
 }
 
-// Parser
+// ── AST ───────────────────────────────────────────────────────────────────────
+
+internal enum StatementKind { Let, Var, Define, Assignment, Block, If, Each, Include, OnError, Action }
+internal enum ExpressionKind { String, Integer, Boolean, Symbol, Path, List }
+internal enum CondOp { Eq, Ne }
+internal enum LogicOp { And, Or }
+
+internal sealed record Document(PaxHeader Header, List<Statement> Statements);
+
+internal sealed record Statement(
+    StatementKind Kind,
+    string? Name = null,
+    Expression? Value = null,
+    BlockNode? Block = null,
+    IfNode? If = null,
+    EachNode? Each = null,
+    string? IncludePath = null,
+    List<Statement>? OnErrorBody = null,
+    ActionNode? Action = null);
+
+internal sealed record BlockNode(string Kind, string Label, List<Statement> Body);
+
+internal sealed record IfNode(Condition Cond, List<Statement> Body);
+
+internal sealed record EachNode(string Item, Expression List, List<Statement> Body);
+
+internal sealed record ActionNode(string Verb, string? Subject, Expression? Arg1, Expression? Arg2, List<(string Key, Expression Val)>? Fields = null);
+
+internal sealed record Expression(ExpressionKind Kind, string Text, bool BoolValue, long IntValue, List<string>? Path, List<Expression>? Items);
+
+internal sealed record Condition(Expression Left, CondOp Op, Expression Right, bool Negated, LogicOp? NextLogic, Condition? Next);
+
+// ── Parser ────────────────────────────────────────────────────────────────────
 
 internal sealed class Parser
 {
     private readonly List<Token> _tokens;
     private int _index;
 
-    public Parser(List<Token> tokens)
-    {
-        _tokens = tokens;
-    }
+    public Parser(List<Token> tokens) => _tokens = tokens;
 
     public Document ParseDocument(PaxHeader header)
     {
-        var statements = new List<Statement>();
+        var stmts = new List<Statement>();
         SkipNewLines();
-
-        while (!Check(TokenType.EndOfFile))
-        {
-            statements.Add(ParseStatement());
-            SkipNewLines();
-        }
-
-        return new Document(header, statements);
+        while (!Check(TokenType.EndOfFile)) { stmts.Add(ParseStatement()); SkipNewLines(); }
+        return new Document(header, stmts);
     }
 
     private Statement ParseStatement()
     {
-        if (IsIdentifier("if"))
+        if (IsIdent("let"))
         {
-            return new Statement(
-                StatementKind.If,
-                If: ParseIf());
+            Advance();
+            var name = ConsumeIdent("expected name after 'let'").Text;
+            Consume(TokenType.Assign, "expected '='");
+            var val = ParseExpression();
+            RequireBoundary();
+            return new Statement(StatementKind.Let, Name: name, Value: val);
         }
 
-        if (LooksLikeBlock())
+        if (IsIdent("var"))
         {
-            return new Statement(
-                StatementKind.Block,
-                Block: ParseBlock());
+            Advance();
+            var name = ConsumeIdent("expected name after 'var'").Text;
+            Consume(TokenType.Assign, "expected '='");
+            var val = ParseExpression();
+            RequireBoundary();
+            return new Statement(StatementKind.Var, Name: name, Value: val);
         }
 
-        if (Check(TokenType.Identifier) &&
-            CheckNext(TokenType.Assign))
+        if (IsIdent("define"))
         {
-            return new Statement(
-                StatementKind.Assignment,
-                Assignment: ParseAssignment());
+            Advance();
+            var name = ConsumeIdent("expected name after 'define'").Text;
+            Consume(TokenType.Assign, "expected '='");
+            var val = ParseExpression();
+            RequireBoundary();
+            return new Statement(StatementKind.Define, Name: name, Value: val);
         }
 
-        return new Statement(
-            StatementKind.Action,
-            Action: ParseAction());
-    }
+        if (IsIdent("if")) return new Statement(StatementKind.If, If: ParseIf());
 
-    private AssignmentNode ParseAssignment()
-    {
-        var name = ConsumeIdentifier("expected assignment name").Text;
-        Consume(TokenType.Assign, "expected '=' after assignment name");
-        var value = ParseExpression();
-        RequireBoundary();
-        return new AssignmentNode(name, value);
+        if (IsIdent("each")) return new Statement(StatementKind.Each, Each: ParseEach());
+
+        if (IsIdent("include"))
+        {
+            Advance();
+            var path = Consume(TokenType.String, "expected path string after 'include'").Text;
+            RequireBoundary();
+            return new Statement(StatementKind.Include, IncludePath: path);
+        }
+
+        if (IsIdent("on") && PeekIdent(1, "error")) return new Statement(StatementKind.OnError, OnErrorBody: ParseOnError());
+
+        if (LooksLikeBlock()) return new Statement(StatementKind.Block, Block: ParseBlock());
+
+        if (Check(TokenType.Identifier) && CheckAt(1, TokenType.Assign))
+        {
+            var name = Advance().Text;
+            Advance();
+            var val = ParseExpression();
+            RequireBoundary();
+            return new Statement(StatementKind.Assignment, Name: name, Value: val);
+        }
+
+        return new Statement(StatementKind.Action, Action: ParseAction());
     }
 
     private BlockNode ParseBlock()
     {
-        var kind = ConsumeIdentifier("expected block kind").Text;
+        var kind = ConsumeIdent("expected block kind").Text;
         var label = Consume(TokenType.String, "expected block label").Text;
         SkipNewLines();
-        Consume(TokenType.LBrace, "expected '{' after block label");
-
-        var body = new List<Statement>();
-        SkipNewLines();
-        while (!Check(TokenType.RBrace))
-        {
-            if (Check(TokenType.EndOfFile))
-            {
-                throw Error("unterminated block");
-            }
-
-            body.Add(ParseStatement());
-            SkipNewLines();
-        }
-
-        Consume(TokenType.RBrace, "expected '}' after block body");
+        Consume(TokenType.LBrace, "expected '{'");
+        var body = ParseBody();
+        Consume(TokenType.RBrace, "expected '}'");
         return new BlockNode(kind, label, body);
     }
 
     private IfNode ParseIf()
     {
-        ConsumeIdentifier("expected 'if'");
-        var left = ParseExpression();
-        Consume(TokenType.EqualsEquals, "expected '==' in condition");
-        var right = ParseExpression();
+        ConsumeIdent("expected 'if'");
+        var cond = ParseCondition();
         SkipNewLines();
-        Consume(TokenType.LBrace, "expected '{' after condition");
+        Consume(TokenType.LBrace, "expected '{'");
+        var body = ParseBody();
+        Consume(TokenType.RBrace, "expected '}'");
+        return new IfNode(cond, body);
+    }
 
+    private EachNode ParseEach()
+    {
+        ConsumeIdent("expected 'each'");
+        var item = ConsumeIdent("expected loop variable").Text;
+        if (!IsIdent("in")) throw Error("expected 'in' after loop variable");
+        Advance();
+        var list = ParseExpression();
+        SkipNewLines();
+        Consume(TokenType.LBrace, "expected '{'");
+        var body = ParseBody();
+        Consume(TokenType.RBrace, "expected '}'");
+        return new EachNode(item, list, body);
+    }
+
+    private List<Statement> ParseOnError()
+    {
+        Advance(); // on
+        Advance(); // error
+        SkipNewLines();
+        Consume(TokenType.LBrace, "expected '{'");
+        var body = ParseBody();
+        Consume(TokenType.RBrace, "expected '}'");
+        return body;
+    }
+
+    private List<Statement> ParseBody()
+    {
         var body = new List<Statement>();
         SkipNewLines();
         while (!Check(TokenType.RBrace))
         {
-            if (Check(TokenType.EndOfFile))
-            {
-                throw Error("unterminated if block");
-            }
-
+            if (Check(TokenType.EndOfFile)) throw Error("unterminated block");
             body.Add(ParseStatement());
             SkipNewLines();
         }
+        return body;
+    }
 
-        Consume(TokenType.RBrace, "expected '}' after if block");
-        return new IfNode(left, right, body);
+    private Condition ParseCondition()
+    {
+        var negated = false;
+        if (IsIdent("not")) { Advance(); negated = true; }
+        var left = ParseExpression();
+        CondOp op;
+        if (Match(TokenType.EqualsEquals)) op = CondOp.Eq;
+        else if (Match(TokenType.NotEquals)) op = CondOp.Ne;
+        else throw Error("expected '==' or '!=' in condition");
+        var right = ParseExpression();
+
+        LogicOp? logic = null;
+        Condition? next = null;
+        if (IsIdent("and")) { Advance(); logic = LogicOp.And; next = ParseCondition(); }
+        else if (IsIdent("or")) { Advance(); logic = LogicOp.Or; next = ParseCondition(); }
+
+        return new Condition(left, op, right, negated, logic, next);
     }
 
     private ActionNode ParseAction()
     {
-        var verb = ConsumeIdentifier("expected action verb").Text;
+        var verb = ConsumeIdent("expected action verb").Text;
 
         switch (verb)
         {
-            case "print":
+            case "print": case "log": case "warn": case "fail":
             {
-                var argument = ParseExpression();
+                var arg = ParseExpression();
                 RequireBoundary();
-                return new ActionNode(verb, null, argument);
+                return new ActionNode(verb, null, arg, null);
             }
-            case "stop":
+            case "stop": case "reboot" when !IsIdent("target"):
                 RequireBoundary();
-                return new ActionNode(verb, null, null);
-            case "check":
-            {
-                var subject = ConsumeIdentifier("expected subject after 'check'").Text;
-                RequireBoundary();
-                return new ActionNode(verb, subject, null);
-            }
-            case "install":
-            case "compile":
-            case "enable":
+                return new ActionNode(verb, null, null, null);
+
             case "reboot":
             {
-                var subject = ConsumeIdentifier($"expected subject after '{verb}'").Text;
-                var argument = ParseExpression();
+                if (IsIdent("target")) { Advance(); var arg = ParseExpression(); RequireBoundary(); return new ActionNode(verb, "target", arg, null); }
                 RequireBoundary();
-                return new ActionNode(verb, subject, argument);
+                return new ActionNode(verb, null, null, null);
             }
+
+            case "require":
+            {
+                var cond = ParseConditionAsExpression();
+                RequireBoundary();
+                return new ActionNode(verb, null, cond, null);
+            }
+
+            case "assert":
+            {
+                var cond = ParseConditionAsExpression();
+                var msg = Consume(TokenType.String, "expected message string after condition").Text;
+                RequireBoundary();
+                return new ActionNode(verb, null, cond, StringExpr(msg));
+            }
+
+            case "check":
+            {
+                var subject = ConsumeIdent("expected subject after 'check'").Text;
+                RequireBoundary();
+                return new ActionNode(verb, subject, null, null);
+            }
+
+            case "install":
+            {
+                var subject = ConsumeIdent("expected install target").Text;
+                var arg = ParseExpression();
+                RequireBoundary();
+                return new ActionNode(verb, subject, arg, null);
+            }
+
+            case "compile": case "enable": case "start":
+            {
+                var subject = ConsumeIdent($"expected subject after '{verb}'").Text;
+                var arg = ParseExpression();
+                RequireBoundary();
+                return new ActionNode(verb, subject, arg, null);
+            }
+
+            case "each":
+                throw Error("'each' is a statement, not an action");
+
+            case "set":
+            {
+                var subject = ConsumeIdent("expected set target").Text;
+                if (subject == "password")
+                {
+                    if (!IsIdent("for")) throw Error("expected 'for' after 'set password'");
+                    Advance();
+                    var arg = ParseExpression();
+                    RequireBoundary();
+                    return new ActionNode(verb, "password-for", arg, null);
+                }
+                var val = ParseExpression();
+                RequireBoundary();
+                return new ActionNode(verb, subject, val, null);
+            }
+
+            case "write": case "append":
+            {
+                var path = ParseExpression();
+                if (!IsIdent("content")) throw Error("expected 'content' keyword");
+                Advance();
+                var content = ParseExpression();
+                RequireBoundary();
+                return new ActionNode(verb, null, path, content);
+            }
+
+            case "copy": case "move": case "symlink":
+            {
+                var src = ParseExpression();
+                if (!IsIdent("to")) throw Error($"expected 'to' after {verb} source");
+                Advance();
+                var dest = ParseExpression();
+                RequireBoundary();
+                return new ActionNode(verb, null, src, dest);
+            }
+
+            case "fetch":
+            {
+                var url = ParseExpression();
+                if (!IsIdent("to")) throw Error("expected 'to' after fetch url");
+                Advance();
+                var dest = ParseExpression();
+                RequireBoundary();
+                return new ActionNode(verb, null, url, dest);
+            }
+
+            case "mkdir": case "delete": case "exec": case "umount":
+            {
+                var arg = ParseExpression();
+                RequireBoundary();
+                return new ActionNode(verb, null, arg, null);
+            }
+
+            case "mount":
+            {
+                var dev = ParseExpression();
+                if (!IsIdent("at")) throw Error("expected 'at' after mount device");
+                Advance();
+                var pt = ParseExpression();
+                RequireBoundary();
+                return new ActionNode(verb, null, dev, pt);
+            }
+
+            case "format":
+            {
+                var dev = ParseExpression();
+                if (!IsIdent("as")) throw Error("expected 'as' after format device");
+                Advance();
+                var fs = ConsumeIdent("expected filesystem type").Text;
+                RequireBoundary();
+                return new ActionNode(verb, null, dev, StringExpr(fs));
+            }
+
+            case "service":
+            {
+                var sub = ConsumeIdent("expected service sub-command").Text;
+                var name = ParseExpression();
+                RequireBoundary();
+                return new ActionNode(verb, sub, name, null);
+            }
+
+            case "user":
+            {
+                var sub = ConsumeIdent("expected user sub-command").Text;
+                if (sub == "add-group")
+                {
+                    var u = ParseExpression();
+                    var g = ParseExpression();
+                    RequireBoundary();
+                    return new ActionNode(verb, sub, u, g);
+                }
+                var arg = ParseExpression();
+                RequireBoundary();
+                return new ActionNode(verb, sub, arg, null);
+            }
+
+            case "group":
+            {
+                var sub = ConsumeIdent("expected group sub-command").Text;
+                var name = ParseExpression();
+                RequireBoundary();
+                return new ActionNode(verb, sub, name, null);
+            }
+
+            case "net":
+            {
+                var sub = ConsumeIdent("expected net sub-command").Text;
+                var iface = ParseExpression();
+                if (sub == "configure")
+                {
+                    SkipNewLines();
+                    Consume(TokenType.LBrace, "expected '{'");
+                    var fields = new List<(string, Expression)>();
+                    SkipNewLines();
+                    while (!Check(TokenType.RBrace))
+                    {
+                        var k = ConsumeIdent("expected field name").Text;
+                        Consume(TokenType.Assign, "expected '='");
+                        var v = ParseExpression();
+                        RequireBoundary();
+                        fields.Add((k, v));
+                    }
+                    Consume(TokenType.RBrace, "expected '}'");
+                    return new ActionNode(verb, sub, iface, null, fields);
+                }
+                RequireBoundary();
+                return new ActionNode(verb, sub, iface, null);
+            }
+
+            case "bootloader":
+            {
+                var sub = ConsumeIdent("expected bootloader sub-command").Text;
+                if (sub == "entry")
+                {
+                    var label = Consume(TokenType.String, "expected entry name").Text;
+                    SkipNewLines();
+                    Consume(TokenType.LBrace, "expected '{'");
+                    var fields = new List<(string, Expression)>();
+                    SkipNewLines();
+                    while (!Check(TokenType.RBrace))
+                    {
+                        var k = ConsumeIdent("expected field").Text;
+                        Consume(TokenType.Assign, "expected '='");
+                        var v = ParseExpression();
+                        RequireBoundary();
+                        fields.Add((k, v));
+                    }
+                    Consume(TokenType.RBrace, "expected '}'");
+                    return new ActionNode(verb, sub, StringExpr(label), null, fields);
+                }
+                var loader = ConsumeIdent("expected bootloader name").Text;
+                RequireBoundary();
+                return new ActionNode(verb, sub, StringExpr(loader), null);
+            }
+
+            case "initramfs":
+            {
+                var sub = ConsumeIdent("expected initramfs sub-command").Text;
+                var arg = ParseExpression();
+                RequireBoundary();
+                return new ActionNode(verb, sub, arg, null);
+            }
+
             default:
                 throw Error($"unknown action '{verb}'");
         }
     }
 
+    private Expression ParseConditionAsExpression()
+    {
+        // Represent condition as a synthetic expression for require/assert
+        // We parse and encode it as a string for the interpreter to re-evaluate
+        var negated = false;
+        if (IsIdent("not")) { Advance(); negated = true; }
+        var left = ParseExpression();
+        CondOp op;
+        if (Match(TokenType.EqualsEquals)) op = CondOp.Eq;
+        else if (Match(TokenType.NotEquals)) op = CondOp.Ne;
+        else throw Error("expected '==' or '!=' in condition");
+        var right = ParseExpression();
+        // Pack as a special "condition" expression list: [negated, left, op, right]
+        var items = new List<Expression>
+        {
+            BoolExpr(negated),
+            left,
+            StringExpr(op == CondOp.Eq ? "==" : "!="),
+            right
+        };
+        return new Expression(ExpressionKind.List, "__condition__", false, 0, null, items);
+    }
+
     private Expression ParseExpression()
     {
-        if (Check(TokenType.String))
+        if (Check(TokenType.String)) return new Expression(ExpressionKind.String, Advance().Text, false, 0, null, null);
+        if (Check(TokenType.Integer)) { var t = Advance(); return new Expression(ExpressionKind.Integer, t.Text, false, long.Parse(t.Text), null, null); }
+
+        if (Check(TokenType.LBracket))
         {
-            return new Expression(ExpressionKind.String, Advance().Text, false, null);
+            Advance();
+            var items = new List<Expression>();
+            SkipNewLines();
+            while (!Check(TokenType.RBracket) && !Check(TokenType.EndOfFile))
+            {
+                items.Add(ParseExpression());
+                SkipNewLines();
+                if (!Match(TokenType.Comma)) break;
+                SkipNewLines();
+            }
+            Consume(TokenType.RBracket, "expected ']'");
+            return new Expression(ExpressionKind.List, "[]", false, 0, null, items);
         }
 
-        if (!Check(TokenType.Identifier))
-        {
-            throw Error("expected value");
-        }
+        if (!Check(TokenType.Identifier)) throw Error("expected value");
 
         var first = Advance().Text;
-        if (first == "true")
-        {
-            return new Expression(ExpressionKind.Boolean, first, true, null);
-        }
-
-        if (first == "false")
-        {
-            return new Expression(ExpressionKind.Boolean, first, false, null);
-        }
+        if (first == "true") return new Expression(ExpressionKind.Boolean, "true", true, 0, null, null);
+        if (first == "false") return new Expression(ExpressionKind.Boolean, "false", false, 0, null, null);
+        if (first == "null") return new Expression(ExpressionKind.Symbol, "null", false, 0, null, null);
 
         var path = new List<string> { first };
-        while (Match(TokenType.Dot))
-        {
-            path.Add(ConsumeIdentifier("expected path segment after '.'").Text);
-        }
-
-        if (path.Count == 1)
-        {
-            return new Expression(ExpressionKind.Symbol, first, false, path);
-        }
-
-        return new Expression(ExpressionKind.Path, string.Join('.', path), false, path);
+        while (Match(TokenType.Dot)) path.Add(ConsumeIdent("expected path segment after '.'").Text);
+        return path.Count == 1
+            ? new Expression(ExpressionKind.Symbol, first, false, 0, path, null)
+            : new Expression(ExpressionKind.Path, string.Join('.', path), false, 0, path, null);
     }
+
+    private static Expression StringExpr(string v) => new(ExpressionKind.String, v, false, 0, null, null);
+    private static Expression BoolExpr(bool v) => new(ExpressionKind.Boolean, v ? "true" : "false", v, 0, null, null);
 
     private void RequireBoundary()
     {
-        if (Match(TokenType.NewLine))
-        {
-            SkipNewLines();
-            return;
-        }
-
-        if (Check(TokenType.EndOfFile) || Check(TokenType.RBrace))
-        {
-            return;
-        }
-
+        if (Match(TokenType.NewLine)) { SkipNewLines(); return; }
+        if (Check(TokenType.EndOfFile) || Check(TokenType.RBrace)) return;
         throw Error("expected end of statement");
     }
 
-    private void SkipNewLines()
-    {
-        while (Match(TokenType.NewLine))
-        {
-        }
-    }
+    private void SkipNewLines() { while (Match(TokenType.NewLine)) { } }
 
-    private Token Consume(TokenType type, string message)
-    {
-        if (Check(type))
-        {
-            return Advance();
-        }
-
-        throw Error(message);
-    }
-
-    private Token ConsumeIdentifier(string message)
-    {
-        if (Check(TokenType.Identifier))
-        {
-            return Advance();
-        }
-
-        throw Error(message);
-    }
-
-    private bool IsIdentifier(string text)
-    {
-        return Check(TokenType.Identifier) && Current().Text == text;
-    }
-
-    private bool Match(TokenType type)
-    {
-        if (!Check(type))
-        {
-            return false;
-        }
-
-        Advance();
-        return true;
-    }
-
-    private bool Check(TokenType type)
-    {
-        return Current().Type == type;
-    }
-
-    private bool CheckNext(TokenType type)
-    {
-        return Peek(1).Type == type;
-    }
+    private Token Consume(TokenType type, string message) => Check(type) ? Advance() : throw Error(message);
+    private Token ConsumeIdent(string message) => Check(TokenType.Identifier) ? Advance() : throw Error(message);
+    private bool IsIdent(string text) => Check(TokenType.Identifier) && Current().Text == text;
+    private bool PeekIdent(int offset, string text) => CheckAt(offset, TokenType.Identifier) && Peek(offset).Text == text;
+    private bool Match(TokenType type) { if (!Check(type)) return false; Advance(); return true; }
+    private bool Check(TokenType type) => Current().Type == type;
+    private bool CheckAt(int offset, TokenType type) => Peek(offset).Type == type;
 
     private bool LooksLikeBlock()
     {
-        if (!Check(TokenType.Identifier) || !CheckNext(TokenType.String))
-        {
-            return false;
-        }
-
+        if (!Check(TokenType.Identifier) || !CheckAt(1, TokenType.String)) return false;
         var offset = 2;
-        while (Peek(offset).Type == TokenType.NewLine)
-        {
-            offset++;
-        }
-
-        return Peek(offset).Type == TokenType.LBrace;
+        while (Peek(offset).Type == TokenType.NewLine) offset++;
+        return Peek(offset).Type == TokenType.LBracket ? false : Peek(offset).Type == TokenType.LBrace;
     }
 
-    private Token Advance()
-    {
-        var token = Current();
-        if (!Check(TokenType.EndOfFile))
-        {
-            _index++;
-        }
-
-        return token;
-    }
-
-    private Token Current()
-    {
-        return Peek(0);
-    }
-
-    private Token Peek(int offset)
-    {
-        var position = _index + offset;
-        if (position >= _tokens.Count)
-        {
-            return _tokens[^1];
-        }
-
-        return _tokens[position];
-    }
-
-    private PaxException Error(string message)
-    {
-        var token = Current();
-        return new PaxException($"{message} at line {token.Line}, column {token.Column}");
-    }
+    private Token Advance() { var t = Current(); if (!Check(TokenType.EndOfFile)) _index++; return t; }
+    private Token Current() => Peek(0);
+    private Token Peek(int offset) { var pos = _index + offset; return pos >= _tokens.Count ? _tokens[^1] : _tokens[pos]; }
+    private PaxException Error(string message) { var t = Current(); return new PaxException($"{message} at line {t.Line}, column {t.Column}"); }
 }
 
-// AST
-
-internal enum StatementKind
-{
-    Assignment,
-    Block,
-    If,
-    Action
-}
-
-internal enum ExpressionKind
-{
-    String,
-    Boolean,
-    Symbol,
-    Path
-}
-
-internal sealed record Document(PaxHeader Header, List<Statement> Statements);
-internal sealed record Statement(
-    StatementKind Kind,
-    AssignmentNode? Assignment = null,
-    BlockNode? Block = null,
-    IfNode? If = null,
-    ActionNode? Action = null);
-internal sealed record AssignmentNode(string Name, Expression Value);
-internal sealed record BlockNode(string Kind, string Label, List<Statement> Body);
-internal sealed record IfNode(Expression Left, Expression Right, List<Statement> Body);
-internal sealed record ActionNode(string Verb, string? Subject, Expression? Argument);
-internal sealed record Expression(ExpressionKind Kind, string Text, bool BoolValue, List<string>? Path);
-
-// Interpreter
+// ── Interpreter ───────────────────────────────────────────────────────────────
 
 internal sealed class PaxInterpreter
 {
     private readonly Dictionary<string, object?> _globals = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, object?> _defines = new(StringComparer.Ordinal);
+    private List<Statement>? _onErrorHandler;
     private bool _stopRequested;
 
     public PaxInterpreter()
     {
-        _globals["hardware"] = StatusObject("unknown");
-        _globals["install"] = StatusObject("idle");
-        _globals["compile"] = StatusObject("idle");
-        _globals["desktop"] = StatusObject("disabled");
-        _globals["boot"] = StatusObject("idle");
+        _globals["hardware"] = Status("unknown");
+        _globals["install"]  = Status("idle");
+        _globals["compile"]  = Status("idle");
+        _globals["desktop"]  = Status("disabled");
+        _globals["boot"]     = Status("idle");
+        _globals["disk"]     = Status("idle");
+        _globals["exec"]     = Status("idle");
+        _globals["fetch"]    = Status("idle");
+        _globals["file"]     = Status("idle");
+        _globals["net"]      = Status("down");
+        _globals["user"]     = Status("idle");
+        _globals["initramfs"] = Status("idle");
     }
 
     public void Execute(Document document)
     {
-        _globals["pax"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["header"] = document.Header.Raw,
-            ["label"] = document.Header.Label
-        };
-        ExecuteStatements(document.Statements, _globals);
+        _globals["pax"] = new Dict { ["header"] = document.Header.Raw, ["label"] = document.Header.Label };
+        RunStatements(document.Statements, _globals);
     }
 
-    private void ExecuteStatements(List<Statement> statements, Dictionary<string, object?> scope)
+    private void RunStatements(List<Statement> stmts, Dict scope)
     {
-        foreach (var statement in statements)
+        foreach (var stmt in stmts)
         {
-            if (_stopRequested)
+            if (_stopRequested) return;
+            try { RunStatement(stmt, scope); }
+            catch (PaxException) when (_onErrorHandler is not null)
             {
-                return;
+                var handler = _onErrorHandler;
+                _onErrorHandler = null;
+                RunStatements(handler, scope);
             }
-
-            ExecuteStatement(statement, scope);
         }
     }
 
-    private void ExecuteStatement(Statement statement, Dictionary<string, object?> scope)
+    private void RunStatement(Statement stmt, Dict scope)
     {
-        switch (statement.Kind)
+        switch (stmt.Kind)
         {
+            case StatementKind.Let:
+            case StatementKind.Var:
             case StatementKind.Assignment:
-                ExecuteAssignment(statement.Assignment!, scope);
+                scope[stmt.Name!] = Eval(stmt.Value!, scope);
                 break;
+
+            case StatementKind.Define:
+                _defines[stmt.Name!] = Eval(stmt.Value!, scope);
+                scope[stmt.Name!] = _defines[stmt.Name!];
+                break;
+
             case StatementKind.Block:
-                ExecuteBlock(statement.Block!, scope);
+                RunBlock(stmt.Block!, scope);
                 break;
+
             case StatementKind.If:
-                ExecuteIf(statement.If!, scope);
+                RunIf(stmt.If!, scope);
                 break;
+
+            case StatementKind.Each:
+                RunEach(stmt.Each!, scope);
+                break;
+
+            case StatementKind.Include:
+                Console.Error.WriteLine($"[warn] include '{stmt.IncludePath}' not yet resolved by this interpreter");
+                break;
+
+            case StatementKind.OnError:
+                _onErrorHandler = stmt.OnErrorBody;
+                break;
+
             case StatementKind.Action:
-                ExecuteAction(statement.Action!, scope);
+                RunAction(stmt.Action!, scope);
                 break;
-            default:
-                throw new PaxException($"unsupported statement kind: {statement.Kind}");
         }
     }
 
-    private void ExecuteAssignment(AssignmentNode assignment, Dictionary<string, object?> scope)
+    private void RunBlock(BlockNode block, Dict scope)
     {
-        scope[assignment.Name] = Evaluate(assignment.Value, scope);
-    }
-
-    private void ExecuteBlock(BlockNode block, Dictionary<string, object?> scope)
-    {
-        var nested = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["label"] = block.Label,
-            ["kind"] = block.Kind
-        };
-
-        ExecuteStatements(block.Body, nested);
+        var nested = new Dict { ["label"] = block.Label, ["kind"] = block.Kind };
+        RunStatements(block.Body, nested);
         scope[block.Kind] = nested;
     }
 
-    private void ExecuteIf(IfNode ifNode, Dictionary<string, object?> scope)
+    private void RunIf(IfNode ifNode, Dict scope)
     {
-        var left = Evaluate(ifNode.Left, scope);
-        var right = Evaluate(ifNode.Right, scope);
+        if (EvalCondition(ifNode.Cond, scope)) RunStatements(ifNode.Body, scope);
+    }
 
-        if (ValuesEqual(left, right))
+    private void RunEach(EachNode each, Dict scope)
+    {
+        var listVal = Eval(each.List, scope);
+        if (listVal is not List<object?> items)
+            throw new PaxException($"'each' expects a list, got: {Stringify(listVal)}");
+        foreach (var item in items)
         {
-            ExecuteStatements(ifNode.Body, scope);
+            if (_stopRequested) return;
+            var loopScope = new Dict(scope) { [each.Item] = item };
+            RunStatements(each.Body, loopScope);
         }
     }
 
-    private void ExecuteAction(ActionNode action, Dictionary<string, object?> scope)
+    private bool EvalCondition(Condition cond, Dict scope)
+    {
+        var left = Eval(cond.Left, scope);
+        var right = Eval(cond.Right, scope);
+        var match = cond.Op == CondOp.Eq ? ValuesEqual(left, right) : !ValuesEqual(left, right);
+        var result = cond.Negated ? !match : match;
+
+        if (cond.NextLogic is null) return result;
+        var next = EvalCondition(cond.Next!, scope);
+        return cond.NextLogic == LogicOp.And ? result && next : result || next;
+    }
+
+    private bool EvalConditionExpr(Expression condExpr, Dict scope)
+    {
+        if (condExpr.Kind != ExpressionKind.List || condExpr.Text != "__condition__")
+            throw new PaxException("expected a condition expression");
+        var items = condExpr.Items!;
+        var negated = items[0].BoolValue;
+        var left = Eval(items[1], scope);
+        var op = items[2].Text;
+        var right = Eval(items[3], scope);
+        var match = op == "==" ? ValuesEqual(left, right) : !ValuesEqual(left, right);
+        return negated ? !match : match;
+    }
+
+    private void RunAction(ActionNode action, Dict scope)
     {
         switch (action.Verb)
         {
             case "print":
-                Console.WriteLine(Stringify(Evaluate(action.Argument!, scope)));
+                Console.WriteLine(Interpolate(Stringify(Eval(action.Arg1!, scope)), scope));
                 break;
+
+            case "log":
+                Console.WriteLine($"[log] {Interpolate(Stringify(Eval(action.Arg1!, scope)), scope)}");
+                break;
+
+            case "warn":
+                Console.Error.WriteLine($"[warn] {Interpolate(Stringify(Eval(action.Arg1!, scope)), scope)}");
+                break;
+
+            case "fail":
+                Console.Error.WriteLine($"[fail] {Interpolate(Stringify(Eval(action.Arg1!, scope)), scope)}");
+                _stopRequested = true;
+                throw new PaxException("execution stopped by fail");
+
             case "stop":
                 _stopRequested = true;
                 break;
-            case "check":
-                ExecuteCheck(action, scope);
+
+            case "require":
+            {
+                if (!EvalConditionExpr(action.Arg1!, scope))
+                    throw new PaxException("require condition not met");
                 break;
+            }
+
+            case "assert":
+            {
+                if (!EvalConditionExpr(action.Arg1!, scope))
+                {
+                    var msg = Interpolate(Stringify(Eval(action.Arg2!, scope)), scope);
+                    throw new PaxException($"assertion failed: {msg}");
+                }
+                break;
+            }
+
+            case "check" when action.Subject == "hardware":
+                _globals["hardware"] = new Dict
+                {
+                    ["status"] = "good",
+                    ["arch"]   = "x86_64",
+                    ["ram"]    = "4096",
+                    ["cpu"]    = "simulated",
+                    ["cores"]  = "4",
+                    ["mode"]   = "simulated"
+                };
+                Console.WriteLine("[check] hardware -> good");
+                break;
+
             case "install":
-                ExecuteInstall(action, scope);
+            {
+                var target = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                Console.WriteLine($"[install] {action.Subject} {target}");
+                _globals["install"] = new Dict { ["status"] = "finished", ["target"] = action.Subject ?? "", ["package"] = target };
                 break;
+            }
+
             case "compile":
-                ExecuteCompile(action, scope);
+            {
+                var pkg = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                Console.WriteLine($"[compile] {action.Subject} {pkg}");
+                _globals["compile"] = new Dict { ["status"] = "finished", ["package"] = pkg };
                 break;
-            case "enable":
-                ExecuteEnable(action, scope);
+            }
+
+            case "enable" when action.Subject == "desktop":
+            {
+                var name = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                Console.WriteLine($"[enable] desktop {name}");
+                _globals["desktop"] = new Dict { ["status"] = "enabled", ["current"] = name };
                 break;
+            }
+
+            case "start" when action.Subject == "desktop":
+            {
+                var name = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                Console.WriteLine($"[start] desktop {name}");
+                break;
+            }
+
+            case "set":
+                RunSet(action, scope);
+                break;
+
+            case "write":
+            {
+                var path = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                var content = Interpolate(Stringify(Eval(action.Arg2!, scope)), scope);
+                Console.WriteLine($"[write] {path}");
+                _globals["file"] = new Dict { ["status"] = "written", ["path"] = path };
+                break;
+            }
+
+            case "append":
+            {
+                var path = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                var content = Interpolate(Stringify(Eval(action.Arg2!, scope)), scope);
+                Console.WriteLine($"[append] {path}");
+                _globals["file"] = new Dict { ["status"] = "written", ["path"] = path };
+                break;
+            }
+
+            case "mkdir":
+            {
+                var path = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                Console.WriteLine($"[mkdir] {path}");
+                break;
+            }
+
+            case "copy":
+            {
+                var src  = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                var dest = Interpolate(Stringify(Eval(action.Arg2!, scope)), scope);
+                Console.WriteLine($"[copy] {src} -> {dest}");
+                break;
+            }
+
+            case "move":
+            {
+                var src  = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                var dest = Interpolate(Stringify(Eval(action.Arg2!, scope)), scope);
+                Console.WriteLine($"[move] {src} -> {dest}");
+                break;
+            }
+
+            case "symlink":
+            {
+                var target = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                var link   = Interpolate(Stringify(Eval(action.Arg2!, scope)), scope);
+                Console.WriteLine($"[symlink] {link} -> {target}");
+                break;
+            }
+
+            case "delete":
+            {
+                var path = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                Console.WriteLine($"[delete] {path}");
+                break;
+            }
+
+            case "fetch":
+            {
+                var url  = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                var dest = Interpolate(Stringify(Eval(action.Arg2!, scope)), scope);
+                Console.WriteLine($"[fetch] {url} -> {dest}");
+                _globals["fetch"] = new Dict { ["status"] = "finished", ["url"] = url, ["path"] = dest };
+                break;
+            }
+
+            case "exec":
+            {
+                var cmd = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                Console.WriteLine($"[exec] {cmd}");
+                _globals["exec"] = new Dict { ["status"] = "finished", ["code"] = "0", ["output"] = "" };
+                break;
+            }
+
+            case "mount":
+            {
+                var dev = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                var pt  = Interpolate(Stringify(Eval(action.Arg2!, scope)), scope);
+                Console.WriteLine($"[mount] {dev} at {pt}");
+                _globals["disk"] = new Dict { ["status"] = "mounted", ["device"] = dev, ["mount"] = pt };
+                break;
+            }
+
+            case "umount":
+            {
+                var path = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                Console.WriteLine($"[umount] {path}");
+                break;
+            }
+
+            case "format":
+            {
+                var dev = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                var fs  = Interpolate(Stringify(Eval(action.Arg2!, scope)), scope);
+                Console.WriteLine($"[format] {dev} as {fs}");
+                _globals["disk"] = new Dict { ["status"] = "formatted", ["device"] = dev };
+                break;
+            }
+
+            case "service":
+            {
+                var name = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                Console.WriteLine($"[service] {action.Subject} {name}");
+                break;
+            }
+
+            case "user":
+            {
+                var name = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                if (action.Subject == "add-group")
+                {
+                    var group = Interpolate(Stringify(Eval(action.Arg2!, scope)), scope);
+                    Console.WriteLine($"[user] add-group {name} -> {group}");
+                }
+                else
+                {
+                    Console.WriteLine($"[user] {action.Subject} {name}");
+                    if (action.Subject == "create")
+                        _globals["user"] = new Dict { ["status"] = "created", ["name"] = name };
+                }
+                break;
+            }
+
+            case "group":
+            {
+                var name = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                Console.WriteLine($"[group] {action.Subject} {name}");
+                break;
+            }
+
+            case "net":
+            {
+                var iface = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                Console.WriteLine($"[net] {action.Subject} {iface}");
+                _globals["net"] = new Dict { ["status"] = "up", ["iface"] = iface };
+                break;
+            }
+
+            case "bootloader":
+            {
+                if (action.Subject == "entry")
+                {
+                    var label = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                    Console.WriteLine($"[bootloader] entry '{label}'");
+                    if (action.Fields is not null)
+                        foreach (var (k, v) in action.Fields)
+                            Console.WriteLine($"  {k} = {Interpolate(Stringify(Eval(v, scope)), scope)}");
+                }
+                else
+                {
+                    var loader = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                    Console.WriteLine($"[bootloader] install {loader}");
+                    _globals["boot"] = new Dict { ["status"] = "installed" };
+                }
+                break;
+            }
+
+            case "initramfs":
+            {
+                var target = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+                Console.WriteLine($"[initramfs] build {target}");
+                _globals["initramfs"] = new Dict { ["status"] = "built", ["target"] = target };
+                break;
+            }
+
             case "reboot":
-                ExecuteReboot(action, scope);
+            {
+                var target = action.Subject == "target" && action.Arg1 is not null
+                    ? Interpolate(Stringify(Eval(action.Arg1, scope)), scope)
+                    : null;
+                Console.WriteLine(target is not null ? $"[reboot] target {target}" : "[reboot]");
+                _globals["boot"] = new Dict { ["status"] = "rebooting" };
                 break;
+            }
+
             default:
                 throw new PaxException($"unsupported action: {action.Verb}");
         }
     }
 
-    private void ExecuteCheck(ActionNode action, Dictionary<string, object?> scope)
+    private void RunSet(ActionNode action, Dict scope)
     {
-        if (action.Subject != "hardware")
+        var val = Interpolate(Stringify(Eval(action.Arg1!, scope)), scope);
+        switch (action.Subject)
         {
-            throw new PaxException($"unsupported check target: {action.Subject}");
+            case "hostname": Console.WriteLine($"[set] hostname {val}"); break;
+            case "locale":   Console.WriteLine($"[set] locale {val}");   break;
+            case "timezone": Console.WriteLine($"[set] timezone {val}"); break;
+            case "keymap":   Console.WriteLine($"[set] keymap {val}");   break;
+            case "password-for": Console.WriteLine($"[set] password for {val}"); break;
+            default: throw new PaxException($"unknown set target: {action.Subject}");
         }
-
-        scope["hardware"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["status"] = "good",
-            ["mode"] = "simulated",
-            ["detail"] = "hardware probe passed"
-        };
-
-        Console.WriteLine("[check] hardware -> good");
     }
 
-    private void ExecuteInstall(ActionNode action, Dictionary<string, object?> scope)
+    private object? Eval(Expression expr, Dict scope)
     {
-        if (action.Subject != "package")
+        return expr.Kind switch
         {
-            throw new PaxException($"unsupported install target: {action.Subject}");
-        }
-
-        var packageName = Stringify(Evaluate(action.Argument!, scope));
-        scope["install"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["status"] = "finished",
-            ["target"] = "package",
-            ["package"] = packageName,
-            ["mode"] = "simulated"
-        };
-
-        Console.WriteLine($"[install] package {packageName}");
-    }
-
-    private void ExecuteCompile(ActionNode action, Dictionary<string, object?> scope)
-    {
-        if (action.Subject != "package")
-        {
-            throw new PaxException($"unsupported compile target: {action.Subject}");
-        }
-
-        var packageName = Stringify(Evaluate(action.Argument!, scope));
-        scope["compile"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["status"] = "finished",
-            ["target"] = "package",
-            ["package"] = packageName,
-            ["mode"] = "simulated"
-        };
-
-        Console.WriteLine($"[compile] package {packageName}");
-    }
-
-    private void ExecuteEnable(ActionNode action, Dictionary<string, object?> scope)
-    {
-        if (action.Subject != "desktop")
-        {
-            throw new PaxException($"unsupported enable target: {action.Subject}");
-        }
-
-        var desktopName = Stringify(Evaluate(action.Argument!, scope));
-        scope["desktop"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["status"] = "enabled",
-            ["current"] = desktopName
-        };
-
-        Console.WriteLine($"[enable] desktop {desktopName}");
-    }
-
-    private void ExecuteReboot(ActionNode action, Dictionary<string, object?> scope)
-    {
-        var target = Stringify(Evaluate(action.Argument!, scope));
-        scope["boot"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["status"] = "reboot-requested",
-            ["subject"] = action.Subject ?? "target",
-            ["target"] = target
-        };
-
-        Console.WriteLine($"[reboot] {action.Subject} {target}");
-    }
-
-    private object? Evaluate(Expression expression, Dictionary<string, object?> scope)
-    {
-        return expression.Kind switch
-        {
-            ExpressionKind.String => expression.Text,
-            ExpressionKind.Boolean => expression.BoolValue,
-            ExpressionKind.Symbol => expression.Text,
-            ExpressionKind.Path => ResolvePath(expression.Path!, scope),
-            _ => throw new PaxException($"unsupported expression kind: {expression.Kind}")
+            ExpressionKind.String  => expr.Text,
+            ExpressionKind.Integer => expr.IntValue,
+            ExpressionKind.Boolean => expr.BoolValue,
+            ExpressionKind.Symbol  => expr.Text == "null" ? null : (object?)expr.Text,
+            ExpressionKind.Path    => ResolvePath(expr.Path!, scope),
+            ExpressionKind.List    => expr.Items!.Select(e => Eval(e, scope)).ToList<object?>(),
+            _ => throw new PaxException($"unsupported expression kind: {expr.Kind}")
         };
     }
 
-    private object? ResolvePath(List<string> path, Dictionary<string, object?> scope)
+    private object? ResolvePath(List<string> path, Dict scope)
     {
-        if (path.Count == 0)
-        {
-            return null;
-        }
+        if (path.Count == 0) return null;
 
         object? current = null;
-        if (scope.TryGetValue(path[0], out var localValue))
-        {
-            current = localValue;
-        }
-        else if (_globals.TryGetValue(path[0], out var globalValue))
-        {
-            current = globalValue;
-        }
+        bool found = false;
+        if (_defines.TryGetValue(path[0], out var def)) { current = def; found = true; }
+        else if (scope.TryGetValue(path[0], out var local)) { current = local; found = true; }
+        else if (_globals.TryGetValue(path[0], out var global)) { current = global; found = true; }
 
-        for (var index = 1; index < path.Count; index++)
-        {
-            if (current is Dictionary<string, object?> map &&
-                map.TryGetValue(path[index], out var next))
-            {
-                current = next;
-                continue;
-            }
+        // Unknown root → treat the whole dotted path as a literal package/domain identifier
+        // e.g. dev.praxis.firefox, org.mozilla.firefox, com.github.neovim
+        if (!found) return string.Join('.', path);
 
+        for (var i = 1; i < path.Count; i++)
+        {
+            if (current is Dict map && map.TryGetValue(path[i], out var next)) { current = next; continue; }
             return null;
         }
-
         return current;
+    }
+
+    private string Interpolate(string template, Dict scope)
+    {
+        return Regex.Replace(template, @"\{([A-Za-z_][A-Za-z0-9_.]*)\}", match =>
+        {
+            var parts = match.Groups[1].Value.Split('.');
+            return Stringify(ResolvePath(parts.ToList(), scope));
+        });
     }
 
     private static bool ValuesEqual(object? left, object? right)
     {
-        if (left is bool leftBool && right is bool rightBool)
-        {
-            return leftBool == rightBool;
-        }
-
+        if (left is bool lb && right is bool rb) return lb == rb;
+        if (left is long li && right is long ri) return li == ri;
         return string.Equals(Stringify(left), Stringify(right), StringComparison.Ordinal);
     }
 
-    private static Dictionary<string, object?> StatusObject(string status)
-    {
-        return new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["status"] = status
-        };
-    }
+    private static Dict Status(string s) => new() { ["status"] = s };
 
-    private static string Stringify(object? value)
+    private static string Stringify(object? value) => value switch
     {
-        return value switch
-        {
-            null => "null",
-            bool boolValue => boolValue ? "true" : "false",
-            Dictionary<string, object?> map => "{" + string.Join(", ", map.Select(kvp => $"{kvp.Key}={Stringify(kvp.Value)}")) + "}",
-            _ => value.ToString() ?? string.Empty
-        };
-    }
+        null => "null",
+        bool b => b ? "true" : "false",
+        long l => l.ToString(),
+        List<object?> list => "[" + string.Join(", ", list.Select(Stringify)) + "]",
+        Dict map => "{" + string.Join(", ", map.Select(kv => $"{kv.Key}={Stringify(kv.Value)}")) + "}",
+        _ => value.ToString() ?? string.Empty
+    };
+}
+
+internal sealed class Dict : Dictionary<string, object?>
+{
+    public Dict() : base(StringComparer.Ordinal) { }
+    public Dict(Dict other) : base(other, StringComparer.Ordinal) { }
 }
 
 internal sealed class PaxException : Exception
 {
-    public PaxException(string message)
-        : base(message)
-    {
-    }
+    public PaxException(string message) : base(message) { }
 }

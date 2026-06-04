@@ -115,6 +115,12 @@ case "$disk_bus" in
     ;;
 esac
 
+input_args=(
+  -device qemu-xhci,id=xhci
+  -device usb-kbd,bus=xhci.0
+  -device usb-tablet,bus=xhci.0
+)
+
 kvm_args=()
 if [[ -r /dev/kvm && -w /dev/kvm ]]; then
   kvm_args=(-enable-kvm)
@@ -156,4 +162,5 @@ exec qemu-system-x86_64 \
   -drive if=pflash,format=raw,readonly=on,file="$ovmf_code" \
   -drive if=pflash,format=raw,file="$vars_file" \
   "${disk_args[@]}" \
+  "${input_args[@]}" \
   "${extra_args[@]}"

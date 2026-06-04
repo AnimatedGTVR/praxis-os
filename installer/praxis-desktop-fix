@@ -1,0 +1,303 @@
+#!/bin/sh
+
+set -u
+
+desktop="${1:-}"
+
+if [ -z "${desktop}" ] && [ -r /etc/praxis/desktop-session ]; then
+    desktop="$(sed -n 's/^DESKTOP=//p' /etc/praxis/desktop-session | sed -n '1p')"
+fi
+
+[ -n "${desktop}" ] || desktop="xfce"
+
+say() {
+    printf '[desktop-fix] %s\n' "$*"
+}
+
+run_if_found() {
+    cmd="$1"
+    shift
+
+    if command -v "${cmd}" >/dev/null 2>&1; then
+        say "$cmd $*"
+        "${cmd}" "$@" || true
+    fi
+}
+
+start_udev() {
+    if [ -x /usr/lib/systemd/systemd-udevd ] && command -v udevadm >/dev/null 2>&1; then
+        mkdir -p /run/udev
+        /usr/lib/systemd/systemd-udevd --daemon >/tmp/systemd-udevd.log 2>&1 || true
+        udevadm trigger --action=add >/tmp/udevadm-trigger.log 2>&1 || true
+        udevadm settle >/tmp/udevadm-settle.log 2>&1 || true
+    fi
+}
+
+write_xfce_defaults() {
+    mkdir -p /root/.config/xfce4/xfconf/xfce-perchannel-xml
+
+    cat > /root/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+
+<channel name="xfce4-panel" version="1.0">
+  <property name="configver" type="int" value="2"/>
+  <property name="panels" type="array">
+    <value type="int" value="1"/>
+    <property name="panel-1" type="empty">
+      <property name="position" type="string" value="p=6;x=0;y=0"/>
+      <property name="length" type="uint" value="100"/>
+      <property name="position-locked" type="bool" value="true"/>
+      <property name="size" type="uint" value="32"/>
+      <property name="plugin-ids" type="array">
+        <value type="int" value="1"/>
+        <value type="int" value="2"/>
+        <value type="int" value="3"/>
+        <value type="int" value="4"/>
+        <value type="int" value="5"/>
+      </property>
+    </property>
+  </property>
+  <property name="plugins" type="empty">
+    <property name="plugin-1" type="string" value="applicationsmenu"/>
+    <property name="plugin-2" type="string" value="tasklist"/>
+    <property name="plugin-3" type="string" value="separator">
+      <property name="expand" type="bool" value="true"/>
+      <property name="style" type="uint" value="0"/>
+    </property>
+    <property name="plugin-4" type="string" value="systray"/>
+    <property name="plugin-5" type="string" value="clock"/>
+  </property>
+</channel>
+EOF
+
+    cat > /root/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+
+<channel name="xfwm4" version="1.0">
+  <property name="general" type="empty">
+    <property name="theme" type="string" value="Default"/>
+    <property name="title_font" type="string" value="Sans Bold 9"/>
+    <property name="workspace_count" type="int" value="1"/>
+    <property name="use_compositing" type="bool" value="false"/>
+  </property>
+</channel>
+EOF
+
+    cat > /root/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+
+<channel name="xsettings" version="1.0">
+  <property name="Net" type="empty">
+    <property name="ThemeName" type="string" value="Adwaita"/>
+    <property name="IconThemeName" type="string" value="Adwaita"/>
+  </property>
+  <property name="Gtk" type="empty">
+    <property name="FontName" type="string" value="Sans 10"/>
+  </property>
+</channel>
+EOF
+
+    cat > /root/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+
+<channel name="xfce4-desktop" version="1.0">
+  <property name="backdrop" type="empty">
+    <property name="single-workspace-mode" type="bool" value="false"/>
+    <property name="screen0" type="empty">
+      <property name="monitor0" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="0"/>
+          <property name="last-image" type="string" value=""/>
+          <property name="rgba1" type="array">
+            <value type="double" value="0.023529"/>
+            <value type="double" value="0.078431"/>
+            <value type="double" value="0.141176"/>
+            <value type="double" value="1.000000"/>
+          </property>
+        </property>
+      </property>
+      <property name="monitorVirtual-1" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="0"/>
+          <property name="last-image" type="string" value=""/>
+          <property name="rgba1" type="array">
+            <value type="double" value="0.023529"/>
+            <value type="double" value="0.078431"/>
+            <value type="double" value="0.141176"/>
+            <value type="double" value="1.000000"/>
+          </property>
+        </property>
+      </property>
+      <property name="monitordefault" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="0"/>
+          <property name="last-image" type="string" value=""/>
+          <property name="rgba1" type="array">
+            <value type="double" value="0.023529"/>
+            <value type="double" value="0.078431"/>
+            <value type="double" value="0.141176"/>
+            <value type="double" value="1.000000"/>
+          </property>
+        </property>
+      </property>
+    </property>
+  </property>
+</channel>
+EOF
+}
+
+write_tint2_defaults() {
+    mkdir -p /root/.config/tint2
+
+    if [ -r /etc/xdg/tint2/tint2rc ]; then
+        cp /etc/xdg/tint2/tint2rc /root/.config/tint2/tint2rc 2>/dev/null || true
+        return 0
+    fi
+
+    cat > /root/.config/tint2/tint2rc <<'EOF'
+rounded = 0
+border_width = 0
+background_color = #202020 100
+border_color = #202020 100
+background_color = #444444 100
+border_color = #444444 100
+
+panel_items = TSC
+panel_monitor = all
+panel_position = top center horizontal
+panel_size = 100% 32
+panel_margin = 0 0
+panel_padding = 4 2 4
+panel_background_id = 1
+
+taskbar_mode = single_desktop
+taskbar_padding = 2 2 2
+taskbar_background_id = 0
+
+task_icon = 1
+task_text = 1
+task_centered = 0
+task_maximum_size = 200 28
+task_padding = 6 2 6
+task_background_id = 0
+task_active_background_id = 2
+task_font = sans 9
+task_font_color = #dddddd 100
+task_active_font_color = #ffffff 100
+
+systray_padding = 4 2 4
+systray_background_id = 0
+systray_icon_size = 20
+
+clock = 1
+time1_format = %H:%M
+time1_font = sans bold 9
+clock_font_color = #ffffff 100
+clock_padding = 8 2
+EOF
+}
+
+mkdir -p /run /tmp /root
+chmod 1777 /tmp 2>/dev/null || true
+start_udev
+
+if [ ! -s /etc/machine-id ]; then
+    if command -v dbus-uuidgen >/dev/null 2>&1; then
+        dbus-uuidgen --ensure=/etc/machine-id || true
+    elif [ -r /proc/sys/kernel/random/uuid ]; then
+        tr -d '-' </proc/sys/kernel/random/uuid > /etc/machine-id
+    fi
+fi
+
+run_if_found systemd-sysusers
+run_if_found systemd-tmpfiles --create
+run_if_found dbus-uuidgen --ensure=/etc/machine-id
+
+if command -v glib-compile-schemas >/dev/null 2>&1 &&
+    [ -d /usr/share/glib-2.0/schemas ]; then
+    say "glib-compile-schemas /usr/share/glib-2.0/schemas"
+    glib-compile-schemas /usr/share/glib-2.0/schemas || true
+fi
+
+run_if_found gdk-pixbuf-query-loaders --update-cache
+
+if command -v update-mime-database >/dev/null 2>&1 &&
+    [ -d /usr/share/mime ]; then
+    say "update-mime-database /usr/share/mime"
+    update-mime-database /usr/share/mime || true
+fi
+
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    for icon_dir in /usr/share/icons/*; do
+        [ -f "${icon_dir}/index.theme" ] || continue
+        say "gtk-update-icon-cache ${icon_dir}"
+        gtk-update-icon-cache -q -t -f "${icon_dir}" >/dev/null 2>&1 || true
+    done
+fi
+
+run_if_found fc-cache -r
+
+case "${desktop}" in
+    xfce)
+        write_xfce_defaults
+        write_tint2_defaults
+        cat > /root/.xinitrc <<'EOF'
+export NO_AT_BRIDGE=1
+export XDG_CURRENT_DESKTOP=XFCE
+export XDG_SESSION_DESKTOP=xfce
+export DESKTOP_SESSION=xfce
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/root}"
+mkdir -p "${XDG_RUNTIME_DIR}"
+chmod 700 "${XDG_RUNTIME_DIR}"
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+
+if command -v dbus-launch >/dev/null 2>&1; then
+    eval "$(dbus-launch --sh-syntax --exit-with-session)"
+elif command -v dbus-daemon >/dev/null 2>&1; then
+    _dbus_info="$(dbus-daemon --session --fork --print-address --print-pid 2>/dev/null || true)"
+    export DBUS_SESSION_BUS_ADDRESS="$(printf '%s\n' "${_dbus_info}" | sed -n '1p')"
+    export DBUS_SESSION_BUS_PID="$(printf '%s\n' "${_dbus_info}" | sed -n '2p')"
+fi
+
+xfconfd >/tmp/xfconfd.log 2>&1 &
+sleep 1
+xfsettingsd >/tmp/xfsettingsd.log 2>&1 &
+if command -v xsetroot >/dev/null 2>&1; then
+    xsetroot -solid '#061424' >/tmp/xsetroot.log 2>&1 || true
+fi
+xfwm4 --replace >/tmp/xfwm4.log 2>&1 &
+XFWM_PID=$!
+sleep 1
+if command -v xfce4-panel >/dev/null 2>&1; then
+    xfce4-panel --disable-wm-check >/tmp/xfce4-panel.log 2>&1 &
+fi
+sleep 1
+if ! pgrep -x xfce4-panel >/dev/null 2>&1 && command -v tint2 >/dev/null 2>&1; then
+    if [ -r /root/.config/tint2/tint2rc ]; then
+        tint2 -c /root/.config/tint2/tint2rc >/tmp/tint2.log 2>&1 &
+    else
+        tint2 >/tmp/tint2.log 2>&1 &
+    fi
+fi
+xfdesktop >/tmp/xfdesktop.log 2>&1 &
+sleep 1
+if command -v xsetroot >/dev/null 2>&1; then
+    xsetroot -solid '#061424' >/tmp/xsetroot.log 2>&1 || true
+fi
+thunar --daemon >/tmp/thunar.log 2>&1 &
+if command -v xfce4-terminal >/dev/null 2>&1; then
+    xfce4-terminal >/tmp/xfce4-terminal.log 2>&1 &
+fi
+
+wait "${XFWM_PID}"
+EOF
+        ;;
+esac
+
+chmod +x /root/.xinitrc 2>/dev/null || true
+
+say "done"

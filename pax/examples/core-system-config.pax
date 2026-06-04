@@ -3,7 +3,7 @@
 # Define a core Praxis system config with desktop and package defaults.
 config "core-system-config"
 {
-    package = "base-devel"
+    package = dev.praxis.base-devel
     desktop = xfce
     compile_mode = binary
     hardware_gate = true

@@ -1,0 +1,18 @@
+[.Praxis Config - core-packages profile .praxis.pax./]
+
+# Core package profile for a standard Praxis workstation.
+# All packages use reverse-domain identifiers: tld.org.name
+
+install package dev.praxis.linux
+install package dev.praxis.busybox
+install package org.mozilla.firefox
+install package dev.praxis.kitty
+install package dev.praxis.neovim
+install package org.videolan.vlc
+install package org.gnome.file-roller
+
+# Report when the package profile lands cleanly.
+if install.status == finished
+{
+    print "Core package profile applied."
+}

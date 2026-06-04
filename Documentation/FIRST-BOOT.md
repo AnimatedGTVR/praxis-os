@@ -13,10 +13,11 @@ praxis-status
 
 Confirm:
 
-- the hostname is the one you chose during install
+- the hostname matches the install choice
 - the kernel and release info look correct
-- the shell prompt and Praxis branding are present
-- the package layer shows as ready in `praxis-status`
+- the Praxis prompt and branding are present
+
+## Installed Packages
 
 If you installed a desktop profile or software bundles:
 
@@ -31,39 +32,28 @@ praxis-desktop list
 praxis-netcheck
 ```
 
-If you are in a VM, make sure the virtual NIC is attached and the network path
-is active before debugging Praxis itself.
+In QEMU, make sure the virtual NIC is attached before debugging Praxis itself.
 
 ## Boot Metadata
 
-If the installed target is still mounted somewhere for inspection:
-
-```bash
-praxis-target-check /mnt/praxis
-```
-
-Otherwise, inspect the installed boot path directly:
-
 ```bash
 ls /boot/praxis
-cat /boot/loader/loader.conf
+cat /boot/loader/entries/praxis.conf
 ```
 
 ## Local Docs
 
-Praxis keeps local docs in the installed system too:
+Praxis keeps local docs in the installed system:
 
 ```text
-/usr/share/doc/praxis
+/usr/share/doc/praxis/
 ```
 
 Useful files:
 
-- `README.md`
-- `DOC.md`
 - `INSTALL.md`
-- `QEMU.md`
 - `COMMANDS.md`
+- `QEMU.md`
 - `PACKAGES.md`
 - `TROUBLESHOOTING.md`
-- `PAX.md`
+- `DOC.md` — single-file reference for everything

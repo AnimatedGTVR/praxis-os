@@ -232,19 +232,20 @@ praxis_write_limine_config() {
     PRAXIS_LIMINE_TARGET_ROOT="${1:-}"
     PRAXIS_LIMINE_TITLE="${2:-Praxis}"
     PRAXIS_LIMINE_OPTIONS="${3:-rdinit=/init praxis.live=0 loglevel=3 console=tty0}"
-    PRAXIS_LIMINE_CONFIG="${PRAXIS_LIMINE_TARGET_ROOT}/boot/limine.conf"
 
     if [ -z "${PRAXIS_LIMINE_TARGET_ROOT}" ]; then
         return 1
     fi
 
-    mkdir -p "${PRAXIS_LIMINE_TARGET_ROOT}/boot"
+    # Write to all paths Limine 12.x searches (BIOS: /boot/limine first, EFI: /EFI/BOOT first)
+    mkdir -p "${PRAXIS_LIMINE_TARGET_ROOT}/boot/limine"
+    mkdir -p "${PRAXIS_LIMINE_TARGET_ROOT}/boot/EFI/BOOT"
 
-    cat > "${PRAXIS_LIMINE_CONFIG}" <<EOF
-timeout: 0
-serial: yes
-serial_baudrate: 115200
+    cat > "${PRAXIS_LIMINE_TARGET_ROOT}/boot/limine/limine.conf" <<EOF
+# Praxis - Limine bootloader configuration (Limine 12.x)
+timeout: 5
 default_entry: 1
+serial: yes
 
 /${PRAXIS_LIMINE_TITLE}
 protocol: linux
@@ -252,6 +253,11 @@ path: boot():/praxis/vmlinuz
 module_path: boot():/praxis/initramfs.cpio.gz
 cmdline: ${PRAXIS_LIMINE_OPTIONS}
 EOF
+
+    cp "${PRAXIS_LIMINE_TARGET_ROOT}/boot/limine/limine.conf" \
+       "${PRAXIS_LIMINE_TARGET_ROOT}/boot/limine.conf"
+    cp "${PRAXIS_LIMINE_TARGET_ROOT}/boot/limine/limine.conf" \
+       "${PRAXIS_LIMINE_TARGET_ROOT}/boot/EFI/BOOT/limine.conf"
 
     return 0
 }

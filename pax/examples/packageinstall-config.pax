@@ -3,7 +3,7 @@
 # Define the install target and the desktop that should be enabled.
 config "packageinstall-config"
 {
-    package = "xfce-base/xfce4-meta"
+    package = dev.praxis.xfce4
     desktop = xfce
     compile_mode = source
 }

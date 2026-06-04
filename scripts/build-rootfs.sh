@@ -63,7 +63,10 @@ copy_binary() {
 busybox_has_applet() {
   local applet="$1"
 
-  "$busybox_path" --list 2>/dev/null | grep -qx "$applet"
+  "$busybox_path" --list 2>/dev/null | awk -v applet="$applet" '
+    $0 == applet { found = 1 }
+    END { exit found ? 0 : 1 }
+  '
 }
 
 install_busybox() {
@@ -78,6 +81,21 @@ install_busybox() {
     ln -snf busybox "$stage_dir/bin/$applet_name"
   done < <("$busybox_path" --list)
   ln -snf busybox "$stage_dir/bin/sh"
+  cat > "$stage_dir/bin/mkfs.ext4" <<'WRAPPER'
+#!/bin/sh
+# BusyBox mke2fs does not support -t; strip it so callers using
+# mkfs.ext4 -t ext4 ... or mkfs.ext4 ... both work transparently.
+set -- $(
+  _skip=0
+  for _a in "$@"; do
+    if [ "$_skip" = "1" ]; then _skip=0; continue; fi
+    if [ "$_a" = "-t" ];    then _skip=1; continue; fi
+    printf '%s\n' "$_a"
+  done
+)
+exec mke2fs "$@"
+WRAPPER
+  chmod +x "$stage_dir/bin/mkfs.ext4"
 }
 
 find_limine_dir() {
@@ -136,7 +154,9 @@ cp "$repo_root/installer/mkinitrd" "$stage_dir/usr/local/bin/mkinitrd"
 cp "$repo_root/installer/praxis-chroot" "$stage_dir/usr/local/bin/praxis-chroot"
 cp "$repo_root/installer/praxis-packages" "$stage_dir/usr/local/bin/praxis-packages"
 cp "$repo_root/installer/praxis-desktop" "$stage_dir/usr/local/bin/praxis-desktop"
+cp "$repo_root/installer/praxis-desktop-fix" "$stage_dir/usr/local/bin/praxis-desktop-fix"
 cp "$repo_root/installer/targetcheck" "$stage_dir/usr/local/bin/targetcheck"
+cp "$repo_root/installer/praxis-disk" "$stage_dir/usr/local/bin/praxis-disk"
 cp "$repo_root/installer/praxis-init" "$stage_dir/usr/local/bin/praxis-init"
 cp "$repo_root/installer/praxis-live" "$stage_dir/usr/local/bin/praxis-live"
 cp "$repo_root/installer/praxis-dev-install" "$stage_dir/usr/local/bin/praxis-dev-install"
@@ -208,6 +228,18 @@ fi
 
 install_busybox
 
+# Always vendor essential disk tools — these are not BusyBox applets but are
+# required by praxis-disk and the install flow. Vendor silently if available.
+for _disk_tool in sfdisk wipefs; do
+  if busybox_has_applet "$_disk_tool"; then
+    continue
+  fi
+  _disk_tool_path="$(command -v "$_disk_tool" || true)"
+  if [[ -n "$_disk_tool_path" ]]; then
+    copy_binary "$_disk_tool_path"
+  fi
+done
+
 while read -r tool_name; do
   [[ -n "$tool_name" ]] || continue
   [[ "$tool_name" =~ ^# ]] && continue
@@ -215,7 +247,11 @@ while read -r tool_name; do
     continue
   fi
   if [[ "${PRAXIS_ALLOW_HOST_TOOLS:-0}" != "1" ]]; then
-    skipped_host_tools+=("$tool_name")
+    # Only mark as skipped if not already vendored by the always-vendor loop
+    _tool_src="$(command -v "$tool_name" || true)"
+    if [[ -z "$_tool_src" || ! -f "$stage_dir${_tool_src}" ]]; then
+      skipped_host_tools+=("$tool_name")
+    fi
     continue
   fi
   tool_path="$(command -v "$tool_name" || true)"
@@ -269,7 +305,9 @@ chmod +x \
   "$stage_dir/usr/local/bin/praxis-chroot" \
   "$stage_dir/usr/local/bin/praxis-packages" \
   "$stage_dir/usr/local/bin/praxis-desktop" \
+  "$stage_dir/usr/local/bin/praxis-desktop-fix" \
   "$stage_dir/usr/local/bin/targetcheck" \
+  "$stage_dir/usr/local/bin/praxis-disk" \
   "$stage_dir/usr/local/bin/praxis-init" \
   "$stage_dir/usr/local/bin/praxis-live" \
   "$stage_dir/usr/local/bin/praxis-dev-install"

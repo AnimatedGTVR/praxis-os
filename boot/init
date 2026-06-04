@@ -5,10 +5,11 @@ set -eu
 export PATH="/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export HOME=/root
 
+mkdir -p /proc /sys /dev /dev/pts /run /tmp
 mount -t proc proc /proc 2>/dev/null || true
 mount -t sysfs sys /sys 2>/dev/null || true
 mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
-mkdir -p /dev/pts /run /tmp
+mkdir -p /dev/pts
 mount -t devpts devpts /dev/pts 2>/dev/null || true
 mount -t tmpfs tmpfs /run 2>/dev/null || true
 mount -t tmpfs tmpfs /tmp 2>/dev/null || true
@@ -27,6 +28,15 @@ setup_desktop_environment() {
     mkdir -p /run/root
     chmod 700 /run/root
     cd /root 2>/dev/null || true
+}
+
+start_udev() {
+    if [ -x /usr/lib/systemd/systemd-udevd ] && command -v udevadm >/dev/null 2>&1; then
+        mkdir -p /run/udev
+        /usr/lib/systemd/systemd-udevd --daemon >/tmp/systemd-udevd.log 2>&1 || true
+        udevadm trigger --action=add >/tmp/udevadm-trigger.log 2>&1 || true
+        udevadm settle >/tmp/udevadm-settle.log 2>&1 || true
+    fi
 }
 
 if grep -qw 'praxis.live=0' /proc/cmdline 2>/dev/null &&
@@ -51,6 +61,13 @@ if grep -qw 'praxis.live=0' /proc/cmdline 2>/dev/null &&
     fi
 
     printf 'Praxis: could not mount installed root: %s\n' "${ROOT_SPEC:-missing}" >&2
+fi
+
+if [ ! -r /proc/cmdline ]; then
+    printf 'Praxis: /proc is not mounted; boot mode detection unavailable\n' >&2
+elif grep -qw 'praxis.live=0' /proc/cmdline 2>/dev/null &&
+    [ ! -r /etc/praxis/install ]; then
+    printf 'Praxis: still in initramfs; installed root was not reached\n' >&2
 fi
 
 if [ -c /dev/console ]; then
@@ -78,6 +95,7 @@ if grep -qw 'praxis.live=0' /proc/cmdline 2>/dev/null; then
         printf 'Praxis: desktop autostart not available: /root/.xinitrc missing or not executable\n' > "${DESKTOP_LOG}"
     else
         setup_desktop_environment
+        start_udev
         printf 'Praxis: starting desktop session\n' > "${DESKTOP_LOG}"
         startx /root/.xinitrc -- :0 vt1 >> "${DESKTOP_LOG}" 2>&1 || true
         printf 'Praxis: desktop session exited, falling back to shell\n' >> "${DESKTOP_LOG}"

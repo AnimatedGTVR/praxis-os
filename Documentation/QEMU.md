@@ -1,85 +1,107 @@
 # QEMU
 
-Praxis uses QEMU in three distinct ways:
+Praxis uses QEMU in several ways. All targets build on `build/praxis.iso` and
+`build/praxis.qcow2`.
 
-- `make qemu` opens the ISO in a real QEMU window
-- `make qemu-install` opens the ISO with a writable disk attached for install testing
-- `make qemu-chroot` stages the default QEMU disk and enters `praxis-chroot`
-- `make qemu-installed` boots the installed disk with UEFI firmware
-- `make smoke` keeps the VM headless and waits for the `praxis#` prompt
+| Target | What it does |
+|--------|-------------|
+| `make qemu` | Boot the live ISO in a QEMU window |
+| `make qemu-install` | Boot the live ISO with the QEMU disk attached for manual install |
+| `make qemu-chroot` | Stage the QEMU disk and enter an interactive `praxis-chroot` |
+| `make qemu-full` | Stage the QEMU disk fully non-interactively (no chroot prompt) |
+| `make qemu-installed` | Boot the staged QEMU disk with UEFI firmware |
+| `make smoke` | Headless boot; waits for the `praxis#` prompt |
 
-## Normal Live Boot
+## Fast Path — Automated Disk Setup
+
+The quickest way to get a running installed QEMU system:
 
 ```bash
-cd /home/animated/Praxis
+make iso
+make qemu-full
+make qemu-installed
+```
+
+`make qemu-full` wipes `build/praxis.qcow2`, partitions and formats it, runs
+`praxis-install`, builds the initramfs, writes the boot config, and exits. No
+interactive prompt. `make qemu-installed` then boots the result with UEFI.
+
+## Live ISO Boot
+
+```bash
 make iso
 make qemu
 ```
 
-## Install Test Loop
+## Manual Install Test Loop
+
+Boot the live ISO with the QEMU disk attached:
 
 ```bash
-cd /home/animated/Praxis
 make iso
 make qemu-install
 ```
 
-Inside Praxis:
+Inside the live environment:
 
 ```bash
-praxis-help install
-praxis-preflight
-praxis-packages list
+preflight
 lsblk
-fdisk /dev/vda
-mkfs.vfat -n PRAXISBOOT /dev/vda1
-mke2fs -F -L PRAXISROOT /dev/vda2
-mount /dev/vda2 /mnt/praxis
-mount /dev/vda1 /mnt/praxis/boot
-praxis-fetch
+
+# Partition, format, and mount:
+praxis-disk /dev/vda /mnt/praxis
+
+# Deploy rootfs:
 praxis-install --hostname praxisvm /mnt/praxis
-praxis-target-check /mnt/praxis
-praxis-postinstall /mnt/praxis
+
+# Build initramfs:
+mkinitrd /mnt/praxis
+
+# Configure target (set passwd, etc.):
+praxis-chroot /mnt/praxis
+
+# Verify:
+targetcheck /mnt/praxis
+
+sync
+umount /mnt/praxis/boot
+umount /mnt/praxis
 ```
 
-Then shut the VM down and boot the installed disk:
+Shut down or exit the VM, then boot the installed disk:
 
 ```bash
 make qemu-installed
 ```
 
-## Fast Chroot Test Loop
+## Interactive Chroot Setup
 
-For testing, you can let the host prepare the default QEMU disk up to the target
-configuration step:
+Stage the disk and drop into a `praxis-chroot` to inspect or configure:
 
 ```bash
 make iso
 make qemu-chroot
 ```
 
-That target recreates `build/praxis.qcow2`, partitions and formats it, runs
-`praxis-install`, writes UUID fstab and initramfs policy, builds the initramfs,
-then writes the minimum target-local test configuration and enters
-`praxis-chroot`. You can inspect the target or set a password there; exit when
-you are done.
-
-After you exit, the helper writes the boot entries, validates the target, and
-leaves the disk ready for:
+This recreates `build/praxis.qcow2`, partitions and formats it, runs
+`praxis-install`, builds the initramfs, then opens an interactive
+`praxis-chroot`. Exit the chroot when done. The boot config is written
+automatically after you exit.
 
 ```bash
 make qemu-installed
 ```
 
-## Full Desktop Test Loop
+## Desktop Test Targets
 
-To build a QEMU target with a desktop profile installed and boot it:
+Build and boot a desktop profile non-interactively:
 
 ```bash
 make qemu-full DESKTOP=xfce
+make qemu-installed
 ```
 
-There are also shorthand targets:
+Shorthand targets:
 
 ```bash
 make qemu-full-xfce
@@ -92,57 +114,32 @@ make qemu-full-openbox
 make qemu-full-budgie
 ```
 
-The full target installs the selected desktop profile plus the essentials
-bundle into `build/praxis.qcow2`, writes the normal boot metadata, skips the
-interactive chroot, and boots the installed disk. Installed targets with a
-desktop profile autostart the desktop on boot. Budgie starts a Wayland session
-via labwc; all other profiles start an X11 session via startx. If the session
-exits, Praxis falls back to the shell.
+Desktop targets install the selected profile plus the essentials bundle, write
+boot metadata, and leave the disk ready for `make qemu-installed`. Installed
+desktop targets autostart the desktop session on boot.
 
-The installed-disk QEMU target uses `virtio-gpu` by default so that Wayland
-compositors (labwc) can access a DRM device. Override with `QEMU_VGA=std` if
-needed.
+The installed-disk target uses `virtio-gpu` by default so that Wayland
+compositors can access a DRM device. Override with `QEMU_VGA=std` if needed.
 
 ## Headless Smoke Boot
 
 ```bash
-cd /home/animated/Praxis
 make smoke
 ```
 
 ## Terminal-Only Fallback
 
 ```bash
-cd /home/animated/Praxis
 QEMU_UI=nographic make qemu
 ```
 
-`make qemu` is meant to use the VM window. The terminal-only path is only there when you explicitly ask for it.
+## Notes
 
-Inside the VM, local docs are also available at:
-
-```text
-/usr/share/doc/praxis
-```
-
-The package and desktop profile reference is:
-
-```text
-/usr/share/doc/praxis/PACKAGES.md
-```
-
-The all-in-one docs file is:
-
-```text
-/usr/share/doc/praxis/DOC.md
-```
-
-## Default Disk Artifact
-
-`make qemu-install` creates and reuses:
-
-```text
-build/praxis.qcow2
-```
-
-Delete that file when you want a completely fresh install test.
+- `make qemu-installed` calls `repair-qemu-esp.sh` on every boot to ensure
+  `BOOTX64.EFI` and `limine.conf` are present on the ESP. The kernel and
+  initramfs are placed on the ESP by `mkinitrd` during `qemu-chroot` or
+  `qemu-full` — not by the repair script.
+- `make qemu-full` always wipes and recreates `build/praxis.qcow2`. To keep
+  an existing disk, run `make qemu-installed` directly.
+- The QEMU disk artifact is at `build/praxis.qcow2`. Delete it to start fresh.
+- Inside the live image, docs are at `/usr/share/doc/praxis/`.

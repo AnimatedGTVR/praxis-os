@@ -42,9 +42,15 @@ fi
 
 rm -rf "$iso_stage"
 mkdir -p "$iso_stage/EFI/BOOT"
+mkdir -p "$iso_stage/boot/limine"
 
 cp "$kernel_image" "$iso_stage/vmlinuz"
 cp "$initramfs_path" "$iso_stage/initramfs.cpio.gz"
+# Copy config to all paths Limine 12.x searches, in priority order:
+# /boot/limine/limine.conf (first), /boot/limine.conf, /EFI/BOOT/limine.conf, /limine.conf (last)
+cp "$repo_root/boot/limine.conf" "$iso_stage/boot/limine/limine.conf"
+cp "$repo_root/boot/limine.conf" "$iso_stage/boot/limine.conf"
+cp "$repo_root/boot/limine.conf" "$iso_stage/EFI/BOOT/limine.conf"
 cp "$repo_root/boot/limine.conf" "$iso_stage/limine.conf"
 
 if [[ "${PRAXIS_ALLOW_HOST_KERNEL:-0}" == "1" && "$kernel_image" == "/lib/modules/$(uname -r)/vmlinuz" ]]; then
@@ -68,6 +74,7 @@ if [[ ! -f "$limine_dir/limine-bios.sys" || ! -f "$limine_dir/limine-bios-cd.bin
 fi
 
 cp "$limine_dir/limine-bios.sys" "$iso_stage/limine-bios.sys"
+cp "$limine_dir/limine-bios.sys" "$iso_stage/boot/limine/limine-bios.sys"
 cp "$limine_dir/limine-bios-cd.bin" "$iso_stage/limine-bios-cd.bin"
 
 if [[ -f "$limine_dir/limine-uefi-cd.bin" ]]; then
@@ -78,40 +85,28 @@ if [[ -f "$limine_dir/BOOTX64.EFI" ]]; then
   cp "$limine_dir/BOOTX64.EFI" "$iso_stage/EFI/BOOT/BOOTX64.EFI"
 fi
 
-if command -v xorriso >/dev/null 2>&1; then
-  xorriso -as mkisofs \
-    -quiet \
-    -R \
-    -r \
-    -J \
-    -b limine-bios-cd.bin \
-    -no-emul-boot \
-    -boot-load-size 4 \
-    -boot-info-table \
-    -eltorito-alt-boot \
-    -e EFI/BOOT/BOOTX64.EFI \
-    -no-emul-boot \
-    -o "$iso_file" \
-    "$iso_stage"
-elif command -v mkisofs >/dev/null 2>&1; then
-  mkisofs \
-    -quiet \
-    -R \
-    -r \
-    -J \
-    -b limine-bios-cd.bin \
-    -no-emul-boot \
-    -boot-load-size 4 \
-    -boot-info-table \
-    -eltorito-alt-boot \
-    -e EFI/BOOT/BOOTX64.EFI \
-    -no-emul-boot \
-    -o "$iso_file" \
-    "$iso_stage"
-else
-  echo "missing required tool: xorriso or mkisofs" >&2
+if ! command -v xorriso >/dev/null 2>&1; then
+  echo "missing required tool: xorriso" >&2
   exit 1
 fi
+
+efi_boot_args=()
+if [[ -f "$iso_stage/limine-uefi-cd.bin" ]]; then
+  efi_boot_args=(--efi-boot limine-uefi-cd.bin -efi-boot-part --efi-boot-image)
+fi
+
+xorriso -as mkisofs \
+  -quiet \
+  -R \
+  -r \
+  -J \
+  -b limine-bios-cd.bin \
+  -no-emul-boot \
+  -boot-load-size 4 \
+  -boot-info-table \
+  "${efi_boot_args[@]}" \
+  -o "$iso_file" \
+  "$iso_stage"
 
 limine bios-install "$iso_file"
 

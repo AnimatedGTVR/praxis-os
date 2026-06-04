@@ -1,0 +1,279 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+REPOS_CONF="${PRAXIS_REPOS_CONF:-/etc/praxis/repos.conf}"
+CACHE_DIR="${PRAXIS_PKG_CACHE:-/var/cache/praxis-pkg}"
+INDEX_DIR="$CACHE_DIR/index"
+
+print_usage() {
+    printf 'usage: praxis-pkg <command> [args]\n\n'
+    printf 'commands:\n'
+    printf '  sync                       fetch and update all repo indexes\n'
+    printf '  list                       list all available packages\n'
+    printf '  list <repo>                list packages from one repo\n'
+    printf '  info <id>                  show info for a package identifier\n'
+    printf '  install <id> [<id>...]     install one or more packages\n'
+    printf '  remove <id> [<id>...]      remove one or more packages\n'
+    printf '  search <term>              search package names and descriptions\n'
+    printf '  repos                      list configured repositories\n'
+    printf '\n'
+    printf 'package identifiers use reverse-domain notation:\n'
+    printf '  dev.praxis.neovim\n'
+    printf '  org.mozilla.firefox\n'
+    printf '  org.videolan.vlc\n'
+    printf '  org.gnome.nautilus\n'
+}
+
+die() { printf 'praxis-pkg: %s\n' "$*" >&2; exit 1; }
+
+require_root() {
+    [ "$(id -u)" -eq 0 ] || die "this command must be run as root"
+}
+
+load_repos() {
+    [ -f "$REPOS_CONF" ] || die "repos.conf not found: $REPOS_CONF"
+
+    REPO_NAMES=()
+    REPO_URLS=()
+    REPO_ENABLED=()
+    REPO_SIGNED=()
+
+    local name="" url="" enabled="" signed=""
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%%#*}"
+        line="${line%"${line##*[![:space:]]}"}"
+        [ -z "$line" ] && continue
+
+        if [ "$line" = "[repo]" ]; then
+            if [ -n "$name" ] && [ -n "$url" ]; then
+                REPO_NAMES+=("$name")
+                REPO_URLS+=("$url")
+                REPO_ENABLED+=("${enabled:-yes}")
+                REPO_SIGNED+=("${signed:-no}")
+            fi
+            name="" url="" enabled="" signed=""
+            continue
+        fi
+
+        key="${line%%=*}"
+        val="${line#*=}"
+        key="${key%"${key##*[![:space:]]}"}"
+        key="${key#"${key%%[![:space:]]*}"}"
+        val="${val%"${val##*[![:space:]]}"}"
+        val="${val#"${val%%[![:space:]]*}"}"
+
+        case "$key" in
+            name)    name="$val" ;;
+            url)     url="$val" ;;
+            enabled) enabled="$val" ;;
+            signed)  signed="$val" ;;
+        esac
+    done < "$REPOS_CONF"
+
+    if [ -n "$name" ] && [ -n "$url" ]; then
+        REPO_NAMES+=("$name")
+        REPO_URLS+=("$url")
+        REPO_ENABLED+=("${enabled:-yes}")
+        REPO_SIGNED+=("${signed:-no}")
+    fi
+}
+
+cmd_repos() {
+    load_repos
+    printf '%-24s %-8s %-8s %s\n' NAME ENABLED SIGNED URL
+    printf '%-24s %-8s %-8s %s\n' '----' '-------' '------' '---'
+    local i
+    for i in "${!REPO_NAMES[@]}"; do
+        printf '%-24s %-8s %-8s %s\n' \
+            "${REPO_NAMES[$i]}" \
+            "${REPO_ENABLED[$i]}" \
+            "${REPO_SIGNED[$i]}" \
+            "${REPO_URLS[$i]}"
+    done
+}
+
+cmd_sync() {
+    require_root
+    load_repos
+    mkdir -p "$INDEX_DIR"
+    local i
+    for i in "${!REPO_NAMES[@]}"; do
+        [ "${REPO_ENABLED[$i]}" = "yes" ] || continue
+        local name="${REPO_NAMES[$i]}"
+        local url="${REPO_URLS[$i]}"
+        printf 'syncing %s ...\n' "$name"
+        if command -v curl >/dev/null 2>&1; then
+            curl -fsSL "$url/INDEX.gz" -o "$INDEX_DIR/$name.INDEX.gz" || {
+                printf 'praxis-pkg: warning: failed to fetch index for %s\n' "$name" >&2
+                continue
+            }
+        elif command -v wget >/dev/null 2>&1; then
+            wget -q "$url/INDEX.gz" -O "$INDEX_DIR/$name.INDEX.gz" || {
+                printf 'praxis-pkg: warning: failed to fetch index for %s\n' "$name" >&2
+                continue
+            }
+        else
+            die "curl or wget required for sync"
+        fi
+        printf '  ok: %s\n' "$name"
+    done
+    printf 'sync complete.\n'
+}
+
+cmd_list() {
+    local filter_repo="${1:-}"
+    load_repos
+    local i
+    for i in "${!REPO_NAMES[@]}"; do
+        local name="${REPO_NAMES[$i]}"
+        [ -z "$filter_repo" ] || [ "$filter_repo" = "$name" ] || continue
+        local idx="$INDEX_DIR/$name.INDEX.gz"
+        if [ ! -f "$idx" ]; then
+            printf '  [%s] index not synced — run: praxis-pkg sync\n' "$name"
+            continue
+        fi
+        printf '--- %s ---\n' "$name"
+        zcat "$idx" | awk -F'\t' '{ printf "  %-40s %s\n", $1, $3 }'
+    done
+}
+
+cmd_info() {
+    local id="${1:-}"
+    [ -n "$id" ] || die "expected package identifier"
+    load_repos
+    local i found=0
+    for i in "${!REPO_NAMES[@]}"; do
+        local name="${REPO_NAMES[$i]}"
+        local idx="$INDEX_DIR/$name.INDEX.gz"
+        [ -f "$idx" ] || continue
+        local record
+        record="$(zcat "$idx" | awk -F'\t' -v id="$id" '$1 == id { print; exit }')"
+        [ -n "$record" ] || continue
+        found=1
+        local pkg_id pkg_ver pkg_desc pkg_file
+        pkg_id="$(printf '%s' "$record" | cut -f1)"
+        pkg_ver="$(printf '%s' "$record" | cut -f2)"
+        pkg_desc="$(printf '%s' "$record" | cut -f3)"
+        pkg_file="$(printf '%s' "$record" | cut -f4)"
+        printf 'id:      %s\n' "$pkg_id"
+        printf 'version: %s\n' "$pkg_ver"
+        printf 'desc:    %s\n' "$pkg_desc"
+        printf 'repo:    %s\n' "$name"
+        printf 'file:    %s/%s\n' "${REPO_URLS[$i]}" "$pkg_file"
+        break
+    done
+    [ "$found" -eq 1 ] || die "package not found: $id"
+}
+
+cmd_search() {
+    local term="${1:-}"
+    [ -n "$term" ] || die "expected search term"
+    load_repos
+    local i
+    for i in "${!REPO_NAMES[@]}"; do
+        local name="${REPO_NAMES[$i]}"
+        local idx="$INDEX_DIR/$name.INDEX.gz"
+        [ -f "$idx" ] || continue
+        zcat "$idx" | awk -F'\t' -v t="$term" \
+            'tolower($1) ~ tolower(t) || tolower($3) ~ tolower(t) { printf "  %-40s %s\n", $1, $3 }'
+    done
+}
+
+cmd_install() {
+    require_root
+    [ $# -ge 1 ] || die "expected at least one package identifier"
+    load_repos
+
+    local id
+    for id in "$@"; do
+        printf 'installing %s ...\n' "$id"
+
+        local found=0
+        local i
+        for i in "${!REPO_NAMES[@]}"; do
+            local name="${REPO_NAMES[$i]}"
+            local url="${REPO_URLS[$i]}"
+            local idx="$INDEX_DIR/$name.INDEX.gz"
+            [ -f "$idx" ] || continue
+
+            local record
+            record="$(zcat "$idx" | awk -F'\t' -v id="$id" '$1 == id { print; exit }')"
+            [ -n "$record" ] || continue
+
+            local pkg_file
+            pkg_file="$(printf '%s' "$record" | cut -f4)"
+            local pkg_url="$url/$pkg_file"
+            local tmp_pkg
+            tmp_pkg="$(mktemp -t praxis-pkg-XXXXXX.prx)"
+
+            printf '  fetching %s\n' "$pkg_url"
+            if command -v curl >/dev/null 2>&1; then
+                curl -fsSL "$pkg_url" -o "$tmp_pkg"
+            else
+                wget -q "$pkg_url" -O "$tmp_pkg"
+            fi
+
+            printf '  unpacking %s\n' "$id"
+            _unpack_prx "$tmp_pkg" /
+            rm -f "$tmp_pkg"
+
+            printf '  installed: %s\n' "$id"
+            found=1
+            break
+        done
+
+        [ "$found" -eq 1 ] || {
+            printf 'praxis-pkg: package not found: %s\n' "$id" >&2
+            printf 'praxis-pkg: run "praxis-pkg sync" if indexes are stale\n' >&2
+            exit 1
+        }
+    done
+}
+
+_unpack_prx() {
+    local prx="$1" root="$2"
+    # .prx is a gzip-compressed tar archive containing:
+    #   PKGINFO   — metadata (id, version, desc, deps)
+    #   data/     — filesystem tree to install under $root
+    local tmpdir
+    tmpdir="$(mktemp -d -t prx-XXXXXX)"
+    tar -xzf "$prx" -C "$tmpdir"
+    if [ -d "$tmpdir/data" ]; then
+        tar -C "$tmpdir/data" -cf - . | tar -C "$root" -xf -
+    fi
+    if [ -f "$tmpdir/PKGINFO" ]; then
+        mkdir -p "$root/var/lib/praxis-pkg/installed"
+        cp "$tmpdir/PKGINFO" "$root/var/lib/praxis-pkg/installed/$(basename "$prx" .prx).PKGINFO"
+    fi
+    rm -rf "$tmpdir"
+}
+
+cmd_remove() {
+    require_root
+    [ $# -ge 1 ] || die "expected at least one package identifier"
+    local id
+    for id in "$@"; do
+        local info_file="/var/lib/praxis-pkg/installed/$id.PKGINFO"
+        [ -f "$info_file" ] || die "package not installed: $id"
+        printf 'removing %s ...\n' "$id"
+        rm -f "$info_file"
+        printf '  removed: %s\n' "$id"
+        printf '  note: filesystem files are not yet tracked for removal in this version\n'
+    done
+}
+
+[ $# -ge 1 ] || { print_usage; exit 1; }
+
+cmd="$1"; shift
+case "$cmd" in
+    sync)    cmd_sync "$@" ;;
+    list)    cmd_list "$@" ;;
+    info)    cmd_info "$@" ;;
+    search)  cmd_search "$@" ;;
+    install) cmd_install "$@" ;;
+    remove)  cmd_remove "$@" ;;
+    repos)   cmd_repos "$@" ;;
+    help|--help|-h) print_usage ;;
+    *) die "unknown command: $cmd" ;;
+esac
