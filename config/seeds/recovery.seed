@@ -1,0 +1,13 @@
+# Praxis seed ledger: recovery
+# Recovery markers and audit directories. This does not repair boot.
+
+mkdir /etc/praxis
+mkdir /var/lib/praxis
+mkdir /var/lib/praxis/recovery
+mkdir /root/recovery
+write /etc/praxis/seed-profile recovery
+write /etc/praxis/seed-contract explicit-ledger
+write /var/lib/praxis/seed-stage recovery
+write /var/lib/praxis/recovery/README Run targetcheck and praxis-recover. Do not assume this seed repaired the target.
+touch /root/recovery/.keep
+append /etc/motd Praxis recovery seed applied. Run targetcheck.

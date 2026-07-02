@@ -1,22 +1,17 @@
-[.Praxis Config - liveboot-config boot logic .praxis.pax./]
+[.Praxis Config - liveboot config v2 .praxis.pax./]
 
-# Describe how the live boot should behave before the desktop comes up.
-boot "liveboot-config"
-{
-    desktop = gnome
-    hardware_gate = true
-}
+# Live boot policy in PAX v2 form.
 
-# Check the current machine before enabling the live desktop session.
+let Desktop live_desktop = gnome
+let Service display_manager = "gdm"
+
 check hardware
+assert state.hardware.status == good "live boot hardware gate failed"
 
-# Block the boot path if the live hardware gate fails.
-if hardware.status == bad
-{
-    print "Boot blocked by hardware gate."
-    stop
-}
+install desktop live_desktop
+assert state.desktop.current == live_desktop "live desktop did not install"
 
-# Continue into the selected desktop and request a reboot target.
-enable desktop boot.desktop
-reboot target desktop
+service enable display_manager
+assert state.service.last_enable == display_manager "display manager was not enabled"
+
+log "Live boot desktop path is ready."

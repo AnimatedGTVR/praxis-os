@@ -160,33 +160,60 @@ praxis-pkg list praxis-core         # list packages from one repo
 praxis-pkg info dev.praxis.neovim   # show package info
 praxis-pkg search editor            # search by name or description
 praxis-pkg install dev.praxis.neovim org.mozilla.firefox
+praxis-pkg install-local --root /mnt/praxis package.prx
 praxis-pkg remove dev.praxis.neovim
 praxis-pkg repos                    # list configured repos
+praxis-pkg validate-pkginfo PKGINFO # validate package metadata
+praxis-pkg validate-index INDEX.gz  # validate repository index
+praxis-pkg inspect package.prx      # inspect and validate an archive
 ```
+
+`install` validates the `.prx` archive before unpacking it. The validator
+rejects unknown `PKGINFO` fields, invalid reverse-domain identifiers, invalid
+versions, invalid architectures, duplicate index IDs, unsafe archive paths, and
+archives missing `PKGINFO` or `data/`.
+
+`install-local` is the hard local path. It installs only explicit `.prx` files
+into an explicit `--root`, refuses `/`, validates the archive first, records
+`PKGINFO`, writes an installed file ledger, and does not resolve dependencies or
+download anything.
 
 ---
 
 ## PAX Integration
 
-In PAX files, install packages using their reverse-domain identifier directly —
-no quotes:
+In PAX v2 files, package identifiers are typed values introduced with `pkg`.
+They are not strings and not ordinary unresolved dotted paths:
 
 ```pax
-install package dev.praxis.neovim
-install package org.mozilla.firefox
-install package org.videolan.vlc
+let Package editor = pkg dev.praxis.neovim
+let Package browser = pkg org.mozilla.firefox
+let Package player = pkg org.videolan.vlc
+
+install package editor
+assert state.package.last_install == editor "editor install did not land"
+
+install package browser
+assert state.package.last_install == browser "browser install did not land"
 ```
 
-Quoted strings are not valid for package identifiers. The identifier is a bare
-dotted path in PAX syntax, not a string literal.
+Quoted strings are not valid for package identifiers. Bare dotted paths are
+valid only after `pkg` introduces them as package IDs.
 
 To iterate over a list of packages:
 
 ```pax
-let apps = [ dev.praxis.neovim, org.mozilla.firefox, dev.praxis.kitty ]
+let List<Package> apps = [
+    pkg dev.praxis.neovim,
+    pkg org.mozilla.firefox,
+    pkg dev.praxis.kitty
+]
 
-each pkg in apps
-{
+for pkg in apps {
     install package pkg
+    assert state.package.last_install == pkg "package install did not land"
 }
 ```
+
+PAX v1 examples may still use older shorthand forms, but new Praxis package
+documentation should use the v2 typed form.

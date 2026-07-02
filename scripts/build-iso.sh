@@ -85,6 +85,20 @@ if [[ -f "$limine_dir/BOOTX64.EFI" ]]; then
   cp "$limine_dir/BOOTX64.EFI" "$iso_stage/EFI/BOOT/BOOTX64.EFI"
 fi
 
+"$repo_root/scripts/build-metadata.sh" \
+  "$iso_stage/praxis-build-info" \
+  "$kernel_image" \
+  "$initramfs_path"
+
+(
+  cd "$iso_stage"
+  find . -type f \
+    ! -path './praxis-stage.sha256' \
+    -print0 |
+    sort -z |
+    xargs -0 sha256sum > praxis-stage.sha256
+)
+
 if ! command -v xorriso >/dev/null 2>&1; then
   echo "missing required tool: xorriso" >&2
   exit 1
@@ -109,5 +123,12 @@ xorriso -as mkisofs \
   "$iso_stage"
 
 limine bios-install "$iso_file"
+
+"$repo_root/scripts/build-metadata.sh" \
+  "$iso_file.build-info" \
+  "$iso_file" \
+  "$kernel_image" \
+  "$initramfs_path"
+sha256sum "$iso_file" > "$iso_file.sha256"
 
 printf 'Built Praxis ISO at %s\n' "$iso_file"

@@ -1,0 +1,12 @@
+# Praxis seed ledger: workstation
+# Workstation intent markers. Packages are still chosen separately.
+
+mkdir /etc/praxis
+mkdir /etc/praxis/workstation
+mkdir /var/lib/praxis
+write /etc/praxis/seed-profile workstation
+write /etc/praxis/seed-contract explicit-ledger
+write /etc/praxis/workstation/desktop-choice manual
+write /etc/praxis/workstation/package-choice manual
+write /var/lib/praxis/seed-stage workstation
+append /etc/motd Praxis workstation seed applied. Package and desktop choices remain manual.

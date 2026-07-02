@@ -1,0 +1,199 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*) SCRIPT_DIR_PATH="${0%/*}" ;;
+    *) SCRIPT_DIR_PATH="." ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+usage() {
+    printf 'usage:\n' >&2
+    printf '  praxis-contract export <target>\n' >&2
+    printf '  praxis-contract inspect <contract>\n' >&2
+    printf '  praxis-contract verify <contract> <target>\n' >&2
+}
+
+require_target() {
+    target_root="$1"
+    [ -d "${target_root}" ] || {
+        printf 'missing target root: %s\n' "${target_root}" >&2
+        exit 1
+    }
+}
+
+contract_path_ok() {
+    contract_path="$1"
+    case "${contract_path}" in
+        /*) ;;
+        *) return 1 ;;
+    esac
+    case "${contract_path}" in
+        *'/../'*|*/..|'../'*|..) return 1 ;;
+    esac
+    return 0
+}
+
+emit_file_record() {
+    target_root="$1"
+    contract_path="$2"
+    required="$3"
+
+    contract_path_ok "${contract_path}" || {
+        printf 'invalid contract path: %s\n' "${contract_path}" >&2
+        exit 1
+    }
+
+    full_path="${target_root%/}${contract_path}"
+    if [ -f "${full_path}" ]; then
+        checksum="$(sha256sum "${full_path}" | awk '{print $1}')"
+        size="$(wc -c < "${full_path}" | tr -d ' ')"
+        printf 'file|%s|present|%s|%s\n' "${contract_path}" "${checksum}" "${size}"
+    elif [ "${required}" = "required" ]; then
+        printf 'file|%s|missing|required|0\n' "${contract_path}"
+    else
+        printf 'file|%s|missing|optional|0\n' "${contract_path}"
+    fi
+}
+
+export_contract() {
+    target_root="$1"
+    require_target "${target_root}"
+
+    printf 'PRAXIS_CONTRACT_V1\n'
+    printf 'target|%s\n' "${target_root}"
+    if [ -r "${target_root}/etc/praxis/system.choice" ]; then
+        kernel="$(sed -n 's/^KERNEL_PROFILE=//p' "${target_root}/etc/praxis/system.choice" | sed -n '1p')"
+        init="$(sed -n 's/^INIT_CHOICE=//p' "${target_root}/etc/praxis/system.choice" | sed -n '1p')"
+        rdinit="$(sed -n 's/^INIT_RDINIT=//p' "${target_root}/etc/praxis/system.choice" | sed -n '1p')"
+        printf 'choice|kernel|%s\n' "${kernel:-unknown}"
+        printf 'choice|init|%s\n' "${init:-unknown}"
+        printf 'choice|rdinit|%s\n' "${rdinit:-unknown}"
+    else
+        printf 'choice|kernel|missing\n'
+        printf 'choice|init|missing\n'
+        printf 'choice|rdinit|missing\n'
+    fi
+
+    emit_file_record "${target_root}" /etc/praxis/system.choice required
+    emit_file_record "${target_root}" /etc/praxis/packages.selected required
+    emit_file_record "${target_root}" /etc/praxis/build-info required
+    emit_file_record "${target_root}" /etc/praxis/rootfs.sha256 required
+    emit_file_record "${target_root}" /etc/praxis/install required
+    emit_file_record "${target_root}" /boot/loader/entries/praxis.conf required
+
+    for contract_path in \
+        /etc/praxis/manifests/base-system.manifest \
+        /etc/praxis/seeds/base.seed \
+        /etc/praxis/seeds/workstation.seed \
+        /etc/praxis/seeds/recovery.seed \
+        /etc/praxis/seeds/v2-half.seed
+    do
+        emit_file_record "${target_root}" "${contract_path}" optional
+    done
+}
+
+inspect_contract() {
+    contract_file="$1"
+    [ -r "${contract_file}" ] || {
+        printf 'missing contract: %s\n' "${contract_file}" >&2
+        exit 1
+    }
+
+    header="$(sed -n '1p' "${contract_file}")"
+    [ "${header}" = "PRAXIS_CONTRACT_V1" ] || {
+        printf 'invalid contract header: %s\n' "${contract_file}" >&2
+        exit 1
+    }
+
+    praxis_header "Contract"
+    awk -F'|' '
+        NR == 1 { next }
+        $1 == "target" { printf "%-18s %s\n", "Target", $2; next }
+        $1 == "choice" { printf "%-18s %s=%s\n", "Choice", $2, $3; next }
+        $1 == "file" { printf "%-18s %s %s\n", "File", $2, $3; next }
+    ' "${contract_file}"
+}
+
+verify_contract() {
+    contract_file="$1"
+    target_root="$2"
+    require_target "${target_root}"
+    [ -r "${contract_file}" ] || {
+        printf 'missing contract: %s\n' "${contract_file}" >&2
+        exit 1
+    }
+
+    header="$(sed -n '1p' "${contract_file}")"
+    [ "${header}" = "PRAXIS_CONTRACT_V1" ] || {
+        printf 'invalid contract header: %s\n' "${contract_file}" >&2
+        exit 1
+    }
+
+    failures=0
+    while IFS='|' read -r record contract_path status checksum size extra; do
+        [ "${record}" = "file" ] || continue
+        contract_path_ok "${contract_path}" || {
+            printf 'invalid contract path: %s\n' "${contract_path}" >&2
+            failures=$((failures + 1))
+            continue
+        }
+        full_path="${target_root%/}${contract_path}"
+        if [ "${status}" = "present" ]; then
+            if [ ! -f "${full_path}" ]; then
+                printf 'contract file missing: %s\n' "${contract_path}" >&2
+                failures=$((failures + 1))
+                continue
+            fi
+            actual="$(sha256sum "${full_path}" | awk '{print $1}')"
+            if [ "${actual}" != "${checksum}" ]; then
+                printf 'contract checksum mismatch: %s\n' "${contract_path}" >&2
+                failures=$((failures + 1))
+            fi
+        elif [ "${checksum}" = "required" ]; then
+            printf 'contract required file was missing at export: %s\n' "${contract_path}" >&2
+            failures=$((failures + 1))
+        fi
+    done < "${contract_file}"
+
+    if [ "${failures}" -gt 0 ]; then
+        printf 'Contract verify failed with %s issue(s).\n' "${failures}" >&2
+        exit 1
+    fi
+
+    printf 'Contract verify passed.\n'
+}
+
+ACTION="${1:-}"
+
+case "${ACTION}" in
+    export)
+        [ "$#" -eq 2 ] || { usage; exit 1; }
+        export_contract "$2"
+        ;;
+    inspect)
+        [ "$#" -eq 2 ] || { usage; exit 1; }
+        inspect_contract "$2"
+        ;;
+    verify)
+        [ "$#" -eq 3 ] || { usage; exit 1; }
+        verify_contract "$2" "$3"
+        ;;
+    -h|--help)
+        usage
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+esac

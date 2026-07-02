@@ -1,30 +1,21 @@
-[.Praxis Config - core-system-config .praxis.pax./]
+[.Praxis Config - core system config v2 .praxis.pax./]
 
-# Define a core Praxis system config with desktop and package defaults.
-config "core-system-config"
-{
-    package = dev.praxis.base-devel
-    desktop = xfce
-    compile_mode = binary
-    hardware_gate = true
-}
+# Base Praxis system intent without hidden config blocks.
 
-# Validate the machine before applying the base system config.
+let Package base_devel = pkg dev.praxis.base_devel
+let Bundle essentials = bundle "essentials"
+let Desktop desktop = xfce
+
 check hardware
+assert state.hardware.status == good "hardware gate failed"
 
-# Stop if the machine does not meet the current Praxis gate.
-if hardware.status == bad
-{
-    print "System config blocked by hardware state."
-    stop
-}
+install bundle essentials
+assert state.package.last_bundle == essentials "essentials bundle did not install"
 
-# Apply the base package and desktop choices.
-install package config.package
-enable desktop config.desktop
+install package base_devel
+assert state.package.last_install == base_devel "base-devel package did not install"
 
-# Print a final message when the base system config is ready.
-if install.status == finished
-{
-    print "Core Praxis system config applied."
-}
+install desktop desktop
+assert state.desktop.current == desktop "desktop did not install"
+
+log "Core Praxis system config applied."

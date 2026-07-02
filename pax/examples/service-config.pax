@@ -1,40 +1,22 @@
-[.Praxis Config - service enable and start config .praxis.pax./]
+[.Praxis Config - service config v2 .praxis.pax./]
 
-# Enable and configure system services for a Praxis workstation.
-# State every service explicitly. Nothing runs by default.
+# Enable workstation services explicitly.
 
-let networking = true
-let ssh        = true
-let bluetooth  = false
+let Service network = "NetworkManager"
+let Service ssh = "sshd"
+let Service trim = "fstrim.timer"
+let Service time_sync = "systemd-timesyncd"
 
-# ── Networking ────────────────────────────────────────────────────────────────
+service enable network
+assert state.service.last_enable == network "NetworkManager was not enabled"
 
-if networking == true
-{
-    service enable "NetworkManager"
-    service start "NetworkManager"
-    log "NetworkManager enabled and started."
-}
+service enable ssh
+assert state.service.last_enable == ssh "sshd was not enabled"
 
-# ── SSH ───────────────────────────────────────────────────────────────────────
+service enable trim
+assert state.service.last_enable == trim "fstrim timer was not enabled"
 
-if ssh == true
-{
-    service enable "sshd"
-    log "sshd enabled."
-}
-
-# ── Bluetooth ─────────────────────────────────────────────────────────────────
-
-if bluetooth == false
-{
-    service disable "bluetooth"
-    log "Bluetooth disabled."
-}
-
-# ── Core services ─────────────────────────────────────────────────────────────
-
-service enable "fstrim.timer"
-service enable "systemd-timesyncd"
+service enable time_sync
+assert state.service.last_enable == time_sync "time sync was not enabled"
 
 log "Service configuration complete."

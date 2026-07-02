@@ -1,0 +1,204 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+usage() {
+    printf 'usage:\n' >&2
+    printf '  praxis-manifest list\n' >&2
+    printf '  praxis-manifest show <name>\n' >&2
+    printf '  praxis-manifest verify <name> <target>\n' >&2
+}
+
+manifest_root() {
+    if [ -n "${PRAXIS_MANIFEST_ROOT:-}" ] && [ -d "${PRAXIS_MANIFEST_ROOT}" ]; then
+        printf '%s\n' "${PRAXIS_MANIFEST_ROOT}"
+        return 0
+    fi
+
+    if [ -d "$(praxis_config_root)/manifests" ]; then
+        printf '%s\n' "$(praxis_config_root)/manifests"
+        return 0
+    fi
+
+    if [ -d "${SCRIPT_DIR}/../config/manifests" ]; then
+        printf '%s\n' "${SCRIPT_DIR}/../config/manifests"
+        return 0
+    fi
+
+    return 1
+}
+
+manifest_file() {
+    manifest_name="$1"
+    root="$(manifest_root || true)"
+    [ -n "${root}" ] || return 1
+
+    case "${manifest_name}" in
+        *.manifest) candidate="${root}/${manifest_name}" ;;
+        *) candidate="${root}/${manifest_name}.manifest" ;;
+    esac
+
+    [ -r "${candidate}" ] || return 1
+    printf '%s\n' "${candidate}"
+}
+
+list_manifests() {
+    root="$(manifest_root || true)"
+    [ -n "${root}" ] || return 1
+
+    for manifest_path in "${root}/"*.manifest; do
+        [ -f "${manifest_path}" ] || continue
+        basename "${manifest_path}" .manifest
+    done | sort
+}
+
+show_manifest() {
+    file_path="$1"
+    while IFS= read -r raw_line || [ -n "${raw_line}" ]; do
+        case "${raw_line}" in
+            ''|\#*) continue ;;
+        esac
+        printf '%s\n' "${raw_line}"
+    done < "${file_path}"
+}
+
+target_path() {
+    target_root="$1"
+    manifest_path="$2"
+
+    case "${manifest_path}" in
+        /*) ;;
+        *) printf 'manifest path must be absolute: %s\n' "${manifest_path}" >&2; return 1 ;;
+    esac
+
+    case "${manifest_path}" in
+        *'/../'*|*/..|'../'*|..)
+            printf 'manifest path must not contain ..: %s\n' "${manifest_path}" >&2
+            return 1
+            ;;
+    esac
+
+    printf '%s%s\n' "${target_root}" "${manifest_path}"
+}
+
+verify_manifest() {
+    file_path="$1"
+    target_root="$2"
+    failures=0
+    line_no=0
+
+    [ -d "${target_root}" ] || {
+        printf 'missing target root: %s\n' "${target_root}" >&2
+        return 1
+    }
+
+    while IFS= read -r raw_line || [ -n "${raw_line}" ]; do
+        line_no=$((line_no + 1))
+        case "${raw_line}" in
+            ''|\#*) continue ;;
+        esac
+
+        old_ifs="${IFS}"
+        IFS='|'
+        set -- ${raw_line}
+        IFS="${old_ifs}"
+
+        if [ "$#" -lt 4 ] || [ "${1:-}" != "path" ]; then
+            printf 'invalid manifest line %s: %s\n' "${line_no}" "${raw_line}" >&2
+            failures=$((failures + 1))
+            continue
+        fi
+
+        item_type="$2"
+        item_path="$3"
+        item_owner="$4"
+        full_path="$(target_path "${target_root}" "${item_path}")"
+
+        case "${item_owner}" in
+            praxis|operator|external) ;;
+            *)
+                printf 'invalid owner at line %s: %s\n' "${line_no}" "${item_owner}" >&2
+                failures=$((failures + 1))
+                continue
+                ;;
+        esac
+
+        case "${item_type}" in
+            file)
+                [ -f "${full_path}" ] || {
+                    printf 'missing file: %s\n' "${item_path}" >&2
+                    failures=$((failures + 1))
+                }
+                ;;
+            dir)
+                [ -d "${full_path}" ] || {
+                    printf 'missing directory: %s\n' "${item_path}" >&2
+                    failures=$((failures + 1))
+                }
+                ;;
+            link)
+                [ -L "${full_path}" ] || {
+                    printf 'missing link: %s\n' "${item_path}" >&2
+                    failures=$((failures + 1))
+                }
+                ;;
+            *)
+                printf 'invalid type at line %s: %s\n' "${line_no}" "${item_type}" >&2
+                failures=$((failures + 1))
+                ;;
+        esac
+    done < "${file_path}"
+
+    if [ "${failures}" -gt 0 ]; then
+        printf 'Manifest verify failed with %s issue(s).\n' "${failures}" >&2
+        return 1
+    fi
+
+    printf 'Manifest verify passed.\n'
+}
+
+ACTION="${1:-}"
+
+case "${ACTION}" in
+    list)
+        list_manifests | sed 's/^/  - /'
+        ;;
+    show)
+        [ "$#" -eq 2 ] || { usage; exit 1; }
+        file_path="$(manifest_file "$2" || true)"
+        [ -n "${file_path}" ] || { printf 'unknown manifest: %s\n' "$2" >&2; exit 1; }
+        show_manifest "${file_path}"
+        ;;
+    verify)
+        [ "$#" -eq 3 ] || { usage; exit 1; }
+        file_path="$(manifest_file "$2" || true)"
+        [ -n "${file_path}" ] || { printf 'unknown manifest: %s\n' "$2" >&2; exit 1; }
+        verify_manifest "${file_path}" "$3"
+        ;;
+    -h|--help)
+        usage
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+esac

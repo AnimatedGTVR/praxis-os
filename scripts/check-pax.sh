@@ -16,6 +16,7 @@ required_examples=(
   "hardware-check.pax"
   "core-system-config.pax"
   "full-install.pax"
+  "full-install-v2.pax"
   "user-setup.pax"
   "disk-setup.pax"
   "service-config.pax"

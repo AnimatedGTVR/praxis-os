@@ -1,0 +1,60 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*) SCRIPT_DIR_PATH="${0%/*}" ;;
+    *) SCRIPT_DIR_PATH="." ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+usage() {
+    printf 'usage:\n' >&2
+    printf '  praxis-provenance [<target>]\n' >&2
+    printf '  praxis-provenance verify <target>\n' >&2
+}
+
+target_root="${1:-/}"
+action="show"
+
+if [ "${1:-}" = "verify" ]; then
+    action="verify"
+    target_root="${2:-}"
+    [ -n "${target_root}" ] || { usage; exit 1; }
+fi
+
+build_info="${target_root%/}/etc/praxis/build-info"
+rootfs_manifest="${target_root%/}/etc/praxis/rootfs.sha256"
+
+case "${action}" in
+    show)
+        [ -r "${build_info}" ] || { printf 'missing build-info: %s\n' "${build_info}" >&2; exit 1; }
+        praxis_header "Build Provenance"
+        cat "${build_info}"
+        if [ -r "${rootfs_manifest}" ]; then
+            printf '\nrootfs manifest: %s\n' "${rootfs_manifest}"
+        fi
+        ;;
+    verify)
+        [ -r "${rootfs_manifest}" ] || { printf 'missing rootfs manifest: %s\n' "${rootfs_manifest}" >&2; exit 1; }
+        manifest_rel="${rootfs_manifest#${target_root%/}/}"
+        (
+            cd "${target_root}"
+            sha256sum -c "${manifest_rel}" --quiet
+        )
+        printf 'Provenance verify passed.\n'
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+esac

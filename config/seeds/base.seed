@@ -1,0 +1,11 @@
+# Praxis seed ledger: base
+# Minimal target metadata and operator notes.
+
+mkdir /etc/praxis
+mkdir /var/lib/praxis
+mkdir /usr/local/share/praxis
+write /etc/praxis/seed-profile base
+write /etc/praxis/seed-contract explicit-ledger
+write /var/lib/praxis/seed-stage base
+write /usr/local/share/praxis/README.seed Praxis base seed applied. Review every generated file.
+append /etc/motd Praxis base seed applied.

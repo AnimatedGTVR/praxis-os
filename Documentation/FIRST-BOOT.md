@@ -39,6 +39,7 @@ In QEMU, make sure the virtual NIC is attached before debugging Praxis itself.
 ```bash
 ls /boot/praxis
 cat /boot/loader/entries/praxis.conf
+cat /etc/praxis/system.choice
 ```
 
 ## Local Docs

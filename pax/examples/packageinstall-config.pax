@@ -1,30 +1,17 @@
-[.Praxis Config - packageinstall-config .praxis.pax./]
+[.Praxis Config - package install v2 .praxis.pax./]
 
-# Define the install target and the desktop that should be enabled.
-config "packageinstall-config"
-{
-    package = dev.praxis.xfce4
-    desktop = xfce
-    compile_mode = source
-}
+# Minimal PAX v2 package install example.
 
-# Probe the current machine before the install actions begin.
+let Package desktop_package = pkg dev.praxis.xfce4
+let Desktop desktop = xfce
+
 check hardware
+assert state.hardware.status == good "hardware gate failed"
 
-# Stop early if the hardware probe reports a failure.
-if hardware.status == bad
-{
-    print "Hardware failed."
-    stop
-}
+install package desktop_package
+assert state.package.last_install == desktop_package "desktop package install did not land"
 
-# Run the install workflow using values from the config block.
-install package config.package
-compile package config.package
-enable desktop config.desktop
+install desktop desktop
+assert state.desktop.current == desktop "desktop did not install"
 
-# Confirm success after the fake installer reports a finished state.
-if install.status == finished
-{
-    print "[XFCE] Installed!"
-}
+log "Package install profile applied."

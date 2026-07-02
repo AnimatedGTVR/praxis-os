@@ -26,6 +26,15 @@
 - add real system-seeding mechanics without hiding the install path
 - make the first release feel complete without turning Praxis into a black box
 
+### Milestone 2 Halfway Contract
+
+- define the Praxis v2 contract in `docs/v2.md`
+- expose hard kernel/init/package choice catalogs through `praxis-choice`
+- ship `praxis-seed` as the first explicit system-seeding tool
+- ship a readable default seed ledger in `config/seeds/v2-half.seed`
+- stage v2 docs, PAX v2 docs, and seed ledgers into the live rootfs
+- add `make v2-half-check` as the gate for this midpoint
+
 ## Milestone 3
 
 - formalize package and base-system manifests

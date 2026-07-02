@@ -249,6 +249,7 @@ praxis-pkg list [repo]
 praxis-pkg info <id>
 praxis-pkg search <term>
 praxis-pkg install <id> [<id>...]
+praxis-pkg install-local --root /mnt/praxis package.prx
 praxis-pkg remove <id>
 praxis-pkg repos
 ```
@@ -397,6 +398,7 @@ praxis-pkg list
 praxis-pkg info dev.praxis.neovim
 praxis-pkg search editor
 praxis-pkg install dev.praxis.neovim org.mozilla.firefox
+praxis-pkg install-local --root /mnt/praxis package.prx
 praxis-pkg remove dev.praxis.neovim
 praxis-pkg repos
 ```
@@ -505,9 +507,12 @@ fail "Cannot continue: {disk.status}"
 
 ```bash
 dotnet run --project pax/interpreter/PaxInterpreter.csproj -- pax/examples/full-install.pax
+dotnet run --project pax/interpreter/PaxInterpreter.csproj -- --v2 pax/examples/full-install-v2.pax
 ```
 
-Full language reference: `pax/spec/PAX.md`
+Current language reference: `pax/spec/PAX-V2.md`
+
+Legacy v1 reference: `pax/spec/PAX.md`
 
 ### Example Files
 

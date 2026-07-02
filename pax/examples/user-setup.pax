@@ -1,44 +1,38 @@
-[.Praxis Config - user and group setup .praxis.pax./]
+[.Praxis Config - user setup v2 .praxis.pax./]
 
-# Create users and groups for a Praxis workstation.
-# Every user is created explicitly. Every group membership is stated.
+# User and group setup in PAX v2 action form.
 
-define TARGET = "/mnt/praxis"
+let String primary_user = "alice"
+let String secondary_user = "bob"
 
-# ── Groups ────────────────────────────────────────────────────────────────────
+user create primary_user
+assert state.user.last_create == primary_user "primary user was not created"
 
-group create "builders"
-group create "docker"
+user add-group primary_user "wheel"
+assert state.user.last_group == "wheel" "wheel group was not added"
 
-# ── Primary user ──────────────────────────────────────────────────────────────
+user add-group primary_user "audio"
+assert state.user.last_group == "audio" "audio group was not added"
 
-user "alice"
-{
-    shell  = "/bin/bash"
-    home   = "/home/alice"
-    groups = [ "wheel", "audio", "video", "builders" ]
-}
+user add-group primary_user "video"
+assert state.user.last_group == "video" "video group was not added"
 
-user create "alice"
-user add-group "alice" "wheel"
-user add-group "alice" "audio"
-user add-group "alice" "video"
-user add-group "alice" "builders"
-user set-password "alice"
+user set-password primary_user
+assert state.user.last_password == primary_user "primary user password was not set"
 
-log "User alice created."
+user create secondary_user
+assert state.user.last_create == secondary_user "secondary user was not created"
 
-# ── Secondary user ────────────────────────────────────────────────────────────
+user add-group secondary_user "audio"
+assert state.user.last_group == "audio" "secondary audio group was not added"
 
-user create "bob"
-user add-group "bob" "audio"
-user add-group "bob" "video"
-user set-password "bob"
+user add-group secondary_user "video"
+assert state.user.last_group == "video" "secondary video group was not added"
 
-log "User bob created."
-
-# ── Root password ─────────────────────────────────────────────────────────────
+user set-password secondary_user
+assert state.user.last_password == secondary_user "secondary user password was not set"
 
 set password for "root"
+assert state.user.last_password == "root" "root password was not set"
 
 log "User setup complete."

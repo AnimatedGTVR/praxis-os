@@ -1,6 +1,6 @@
 # Praxis
 
-Praxis is a base Linux distro you can build on.
+Praxis is a minimal Linux distro where you control the system.
 
 It is not a themed remix of another distro. The point is to own the stack, the
 boot path, the root filesystem, and the install experience.
@@ -9,11 +9,16 @@ Praxis is shell-first by design:
 
 - boots to a raw shell, no menu, no prompt
 - explicit multi-stage install with no automation
+- explicit kernel, init, desktop, bundle, and package choices
 - local documentation in the image
 - readable tooling for build, boot, install, and verification
 
 The project goal: own the stack without abstraction. Partitioning, fstab,
 initramfs, chroot configuration, boot entry — each step is yours.
+
+Praxis is not for beginners. The live ISO gives you tools, catalogs, docs, and
+PAX, a custom system-intent language. It does not try to hide the machine from
+you.
 
 ## Current Status
 
@@ -26,6 +31,10 @@ This repository is now an early first-version scaffold:
 - Praxis shell branding with a system-wide Fastfetch profile and ASCII art
 - built-in live toolkit for status, preflight, disk, network, and support reporting
 - local documentation available from `praxis-help`
+- hard choice catalogs via `praxis-choice`
+- auditable base-system manifests via `praxis-manifest`
+- build provenance and checksum ledgers via `praxis-provenance`
+- explicit seed ledgers via `praxis-seed`
 - ISO and QEMU workflows
 - build and sanity-check scripts
 - Praxis-owned kernel build path via `make kernel`
@@ -60,11 +69,19 @@ make qemu-install
 make qemu-installed
 make smoke
 make check
+make check-contract
 make check-owned
+make check-init-profiles
+make check-manifests
+make check-pkg-format
+make check-reproducible
+make check-target-audit
 make v1-check
+make v2-half-check
+make v2-check
 ```
 
-- `make kernel` builds `kernel/bzImage` from upstream Linux source.
+- `make kernel` builds `kernel/bzImage` from upstream Linux source and records `kernel/PROFILE.applied` plus `kernel/build-info`.
 - `make userspace` builds `userspace/busybox` from upstream BusyBox source.
 - `make iso` builds the Praxis kernel and BusyBox userspace if needed, stages the live rootfs, packages the initramfs, and emits `build/praxis.iso`.
 - `make qemu` boots the latest ISO in a real QEMU window.
@@ -72,8 +89,16 @@ make v1-check
 - `make qemu-installed` boots the installed Praxis QEMU disk with UEFI firmware.
 - `make smoke` boots the ISO headlessly and verifies Praxis reaches the `praxis#` shell prompt.
 - `make check` validates shell syntax and stages the rootfs in a temporary directory.
+- `make check-contract` validates contract export, inspect, and verify behavior.
 - `make check-owned` verifies the default rootfs uses the Praxis kernel, static BusyBox, relative BusyBox applet links, and no host package-manager payloads.
+- `make check-init-profiles` validates `RDINIT`, required files, and required directories for init choices.
+- `make check-manifests` validates base-system manifests and package catalog lists.
+- `make check-pkg-format` validates `.prx` metadata, archive layout, local install, and repository index rules.
+- `make check-reproducible` validates build provenance and checksum verification paths.
+- `make check-target-audit` validates `targetcheck --strict` and negative audit fixtures.
 - `make v1-check` runs the owned-rootfs check, the full sanity suite, and a headless QEMU smoke boot.
+- `make v2-half-check` verifies the Praxis v2-half contract: hard choices, seed ledgers, and v2 docs.
+- `make v2-check` verifies most of the Praxis v2 contract, including hard choices, manifests, recovery ledgers, and PAX v2 assertion discipline.
 
 ## Recommended Workflow
 
@@ -187,8 +212,10 @@ For Praxis language docs, use:
 
 ```text
 pax/README.md
-pax/spec/PAX.md
+pax/spec/PAX-V2.md
 ```
+
+The legacy v1 reference remains at `pax/spec/PAX.md`.
 
 Praxis installs a Limine removable-UEFI fallback at `boot/EFI/BOOT/BOOTX64.EFI`. If `/boot` is the mounted EFI system partition and `bootctl` is available, Praxis also tries to install systemd-boot automatically without touching EFI variables.
 

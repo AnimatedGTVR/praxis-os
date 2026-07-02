@@ -1,0 +1,125 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+TARGET_ROOT="${1:-}"
+
+usage() {
+    printf '%s\n' "usage: praxis-recover <target-root>"
+    printf '%s\n' "prints manual recovery commands; does not modify the target"
+}
+
+[ -n "${TARGET_ROOT}" ] || { usage >&2; exit 1; }
+[ -d "${TARGET_ROOT}" ] || { printf 'missing target root: %s\n' "${TARGET_ROOT}" >&2; exit 1; }
+
+has_file() {
+    [ -f "${TARGET_ROOT}$1" ]
+}
+
+has_entry_option() {
+    option="$1"
+    for entry in "${TARGET_ROOT}/boot/loader/entries/"*.conf; do
+        [ -f "${entry}" ] || continue
+        grep -q "${option}" "${entry}" && return 0
+    done
+    return 1
+}
+
+praxis_header "recover"
+printf 'target: %s\n\n' "${TARGET_ROOT}"
+printf '%s\n' "This command is inspect-only. It will not fix anything."
+printf '\n'
+
+printf '%s\n' "audit:"
+if PRAXIS_LIB_ROOT="${PRAXIS_LIB_ROOT:-${SCRIPT_DIR}/lib}" "${SCRIPT_DIR}/targetcheck" "${TARGET_ROOT}" >/tmp/praxis-recover-targetcheck.$$ 2>&1; then
+    sed 's/^/  /' /tmp/praxis-recover-targetcheck.$$
+else
+    sed 's/^/  /' /tmp/praxis-recover-targetcheck.$$
+fi
+rm -f /tmp/praxis-recover-targetcheck.$$
+
+printf '\n%s\n' "manual recovery ledger:"
+
+if ! has_file /etc/praxis/system.choice; then
+    cat <<EOF
+  # write the hard system choice contract yourself
+  mkdir -p ${TARGET_ROOT}/etc/praxis
+  praxis-choice emit --kernel stock --init busybox > ${TARGET_ROOT}/etc/praxis/system.choice
+  vi ${TARGET_ROOT}/etc/praxis/system.choice
+EOF
+fi
+
+if ! has_file /etc/fstab; then
+    cat <<EOF
+  # write fstab by UUID
+  blkid
+  vi ${TARGET_ROOT}/etc/fstab
+EOF
+fi
+
+if ! has_file /etc/praxis/initramfs.conf; then
+    cat <<EOF
+  # write initramfs policy
+  mkdir -p ${TARGET_ROOT}/etc/praxis
+  vi ${TARGET_ROOT}/etc/praxis/initramfs.conf
+EOF
+fi
+
+if ! has_file /boot/praxis/vmlinuz || ! has_file /boot/praxis/initramfs.cpio.gz; then
+    cat <<EOF
+  # rebuild kernel/initramfs artifacts after fstab and initramfs policy are correct
+  mkinitrd ${TARGET_ROOT}
+EOF
+fi
+
+if ! has_file /boot/loader/loader.conf || ! ls "${TARGET_ROOT}/boot/loader/entries/"*.conf >/dev/null 2>&1; then
+    cat <<EOF
+  # write bootloader entries by hand
+  mkdir -p ${TARGET_ROOT}/boot/loader/entries
+  vi ${TARGET_ROOT}/boot/loader/loader.conf
+  vi ${TARGET_ROOT}/boot/loader/entries/praxis.conf
+EOF
+fi
+
+if ! has_file /boot/limine.conf; then
+    cat <<EOF
+  # write Limine config by hand or rerun the explicit install stage
+  vi ${TARGET_ROOT}/boot/limine.conf
+EOF
+fi
+
+if ! has_entry_option 'praxis.live=0'; then
+    cat <<EOF
+  # installed boot entries must include praxis.live=0
+  vi ${TARGET_ROOT}/boot/loader/entries/praxis.conf
+EOF
+fi
+
+if ! has_entry_option 'rdinit='; then
+    cat <<EOF
+  # installed boot entries must name the init path
+  vi ${TARGET_ROOT}/boot/loader/entries/praxis.conf
+EOF
+fi
+
+printf '\n%s\n' "final check:"
+printf '  targetcheck %s\n' "${TARGET_ROOT}"

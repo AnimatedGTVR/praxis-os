@@ -1,0 +1,9 @@
+# Praxis seed ledger: v2-half
+# Format: one explicit operation per line.
+
+mkdir /etc/praxis
+mkdir /var/lib/praxis
+write /etc/praxis/seed-profile v2-half
+write /etc/praxis/seed-contract explicit-ledger
+write /var/lib/praxis/seed-stage v2-half
+append /etc/motd Praxis v2-half seed applied.

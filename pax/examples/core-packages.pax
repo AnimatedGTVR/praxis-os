@@ -1,18 +1,21 @@
-[.Praxis Config - core-packages profile .praxis.pax./]
+[.Praxis Config - core packages v2 .praxis.pax./]
 
 # Core package profile for a standard Praxis workstation.
-# All packages use reverse-domain identifiers: tld.org.name
+# PAX v2 package IDs are introduced with `pkg` and then installed by name.
 
-install package dev.praxis.linux
-install package dev.praxis.busybox
-install package org.mozilla.firefox
-install package dev.praxis.kitty
-install package dev.praxis.neovim
-install package org.videolan.vlc
-install package org.gnome.file-roller
+let List<Package> core_packages = [
+    pkg dev.praxis.linux,
+    pkg dev.praxis.busybox,
+    pkg org.mozilla.firefox,
+    pkg dev.praxis.kitty,
+    pkg dev.praxis.neovim,
+    pkg org.videolan.vlc,
+    pkg org.gnome.file_roller
+]
 
-# Report when the package profile lands cleanly.
-if install.status == finished
-{
-    print "Core package profile applied."
+for pkg in core_packages {
+    install package pkg
+    assert state.package.last_install == pkg "core package install did not land"
 }
+
+log "Core package profile applied."

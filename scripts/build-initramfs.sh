@@ -19,6 +19,14 @@ command -v gzip >/dev/null 2>&1 || { echo "missing required tool: gzip" >&2; exi
 
 mkdir -p "$(dirname "$output_path")"
 
+if [[ -n "${SOURCE_DATE_EPOCH:-}" ]]; then
+  if ! [[ "$SOURCE_DATE_EPOCH" =~ ^[0-9]+$ ]]; then
+    echo "SOURCE_DATE_EPOCH must be an integer epoch value" >&2
+    exit 1
+  fi
+  find "$stage_dir" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+fi
+
 if command -v cpio >/dev/null 2>&1; then
   (
     cd "$stage_dir"

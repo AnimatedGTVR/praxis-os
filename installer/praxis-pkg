@@ -14,9 +14,13 @@ print_usage() {
     printf '  list <repo>                list packages from one repo\n'
     printf '  info <id>                  show info for a package identifier\n'
     printf '  install <id> [<id>...]     install one or more packages\n'
+    printf '  install-local --root <target> <file.prx> [<file.prx>...]\n'
     printf '  remove <id> [<id>...]      remove one or more packages\n'
     printf '  search <term>              search package names and descriptions\n'
     printf '  repos                      list configured repositories\n'
+    printf '  validate-pkginfo <file>    validate a PKGINFO file\n'
+    printf '  validate-index <file>      validate an INDEX or INDEX.gz file\n'
+    printf '  inspect <file.prx>         inspect and validate a .prx archive\n'
     printf '\n'
     printf 'package identifiers use reverse-domain notation:\n'
     printf '  dev.praxis.neovim\n'
@@ -26,6 +30,153 @@ print_usage() {
 }
 
 die() { printf 'praxis-pkg: %s\n' "$*" >&2; exit 1; }
+
+valid_pkg_id() {
+    [[ "${1:-}" =~ ^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*){2,}$ ]]
+}
+
+valid_version() {
+    [[ "${1:-}" =~ ^[A-Za-z0-9][A-Za-z0-9._:+~-]*$ ]]
+}
+
+valid_arch() {
+    case "${1:-}" in
+        x86_64|aarch64|riscv64|any) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+valid_filename() {
+    [[ "${1:-}" =~ ^[A-Za-z0-9._+-]+\.prx$ ]] &&
+        [[ "$1" != */* ]] &&
+        [[ "$1" != *'..'* ]]
+}
+
+pkginfo_value() {
+    local file="$1" key="$2"
+    awk -F= -v key="$key" '
+        $0 ~ /^[[:space:]]*#/ || $0 ~ /^[[:space:]]*$/ { next }
+        {
+            k = $1
+            sub(/^[[:space:]]+/, "", k)
+            sub(/[[:space:]]+$/, "", k)
+            if (k != key) next
+            v = substr($0, index($0, "=") + 1)
+            sub(/^[[:space:]]+/, "", v)
+            sub(/[[:space:]]+$/, "", v)
+            print v
+            exit
+        }
+    ' "$file"
+}
+
+validate_pkginfo_file() {
+    local file="$1"
+    [ -r "$file" ] || die "missing PKGINFO: $file"
+
+    local id version desc arch deps dep unknown
+    id="$(pkginfo_value "$file" id)"
+    version="$(pkginfo_value "$file" version)"
+    desc="$(pkginfo_value "$file" desc)"
+    arch="$(pkginfo_value "$file" arch)"
+    deps="$(pkginfo_value "$file" deps)"
+
+    [ -n "$id" ] || die "PKGINFO missing id"
+    [ -n "$version" ] || die "PKGINFO missing version"
+    [ -n "$desc" ] || die "PKGINFO missing desc"
+    [ -n "$arch" ] || die "PKGINFO missing arch"
+
+    valid_pkg_id "$id" || die "invalid package id: $id"
+    valid_version "$version" || die "invalid package version: $version"
+    valid_arch "$arch" || die "invalid package arch: $arch"
+
+    if [ -n "$deps" ]; then
+        for dep in $deps; do
+            valid_pkg_id "$dep" || die "invalid dependency id: $dep"
+        done
+    fi
+
+    unknown="$(awk -F= '
+        $0 ~ /^[[:space:]]*#/ || $0 ~ /^[[:space:]]*$/ { next }
+        index($0, "=") == 0 { print "malformed"; exit }
+        {
+            k = $1
+            sub(/^[[:space:]]+/, "", k)
+            sub(/[[:space:]]+$/, "", k)
+            if (k !~ /^(id|version|desc|arch|url|license|size|deps|build)$/) {
+                print k
+                exit
+            }
+        }
+    ' "$file")"
+    [ -z "$unknown" ] || die "unknown or malformed PKGINFO field: $unknown"
+}
+
+index_reader() {
+    local index_file="$1"
+    case "$index_file" in
+        *.gz) gzip -dc "$index_file" ;;
+        *) cat "$index_file" ;;
+    esac
+}
+
+validate_index_file() {
+    local index_file="$1"
+    [ -r "$index_file" ] || die "missing index: $index_file"
+
+    local tmp ids duplicate
+    tmp="$(mktemp -t praxis-index-XXXXXX)"
+    index_reader "$index_file" > "$tmp"
+
+    awk -F'\t' '
+        NF != 4 { printf "invalid field count at line %d\n", NR; exit 1 }
+        $1 == "" || $2 == "" || $3 == "" || $4 == "" { printf "empty field at line %d\n", NR; exit 1 }
+    ' "$tmp" || die "invalid index format"
+
+    while IFS="$(printf '\t')" read -r id version desc filename; do
+        valid_pkg_id "$id" || die "invalid package id in index: $id"
+        valid_version "$version" || die "invalid package version in index: $version"
+        valid_filename "$filename" || die "invalid package filename in index: $filename"
+    done < "$tmp"
+
+    ids="$(cut -f1 "$tmp")"
+    duplicate="$(printf '%s\n' "$ids" | sort | uniq -d | sed -n '1p')"
+    [ -z "$duplicate" ] || die "duplicate package id in index: $duplicate"
+    rm -f "$tmp"
+}
+
+validate_prx_archive() {
+    local prx="$1"
+    [ -r "$prx" ] || die "missing package archive: $prx"
+
+    local tmpdir entry package_id
+    tmpdir="$(mktemp -d -t prx-validate-XXXXXX)"
+
+    tar -tzf "$prx" >/dev/null || die "invalid gzip tar archive: $prx"
+    while IFS= read -r entry; do
+        case "$entry" in
+            PKGINFO|./PKGINFO|data|data/*|./data|./data/*) ;;
+            */../*|../*|/*)
+                die "unsafe archive path: $entry"
+                ;;
+            *)
+                die "unexpected archive entry: $entry"
+                ;;
+        esac
+        case "$entry" in
+            */../*|../*|/*) die "unsafe archive path: $entry" ;;
+        esac
+    done < <(tar -tzf "$prx")
+
+    tar -xzf "$prx" -C "$tmpdir"
+    [ -f "$tmpdir/PKGINFO" ] || [ -f "$tmpdir/./PKGINFO" ] || die ".prx missing PKGINFO"
+    [ -d "$tmpdir/data" ] || [ -d "$tmpdir/./data" ] || die ".prx missing data/ tree"
+
+    validate_pkginfo_file "$tmpdir/PKGINFO"
+    package_id="$(pkginfo_value "$tmpdir/PKGINFO" id)"
+    rm -rf "$tmpdir"
+    printf '%s\n' "$package_id"
+}
 
 require_root() {
     [ "$(id -u)" -eq 0 ] || die "this command must be run as root"
@@ -116,6 +267,7 @@ cmd_sync() {
         else
             die "curl or wget required for sync"
         fi
+        validate_index_file "$INDEX_DIR/$name.INDEX.gz"
         printf '  ok: %s\n' "$name"
     done
     printf 'sync complete.\n'
@@ -238,14 +390,120 @@ _unpack_prx() {
     #   data/     — filesystem tree to install under $root
     local tmpdir
     tmpdir="$(mktemp -d -t prx-XXXXXX)"
+    local package_id
+    package_id="$(validate_prx_archive "$prx")"
     tar -xzf "$prx" -C "$tmpdir"
     if [ -d "$tmpdir/data" ]; then
         tar -C "$tmpdir/data" -cf - . | tar -C "$root" -xf -
     fi
     if [ -f "$tmpdir/PKGINFO" ]; then
         mkdir -p "$root/var/lib/praxis-pkg/installed"
-        cp "$tmpdir/PKGINFO" "$root/var/lib/praxis-pkg/installed/$(basename "$prx" .prx).PKGINFO"
+        cp "$tmpdir/PKGINFO" "$root/var/lib/praxis-pkg/installed/${package_id}.PKGINFO"
     fi
+    rm -rf "$tmpdir"
+}
+
+install_prx_to_root() {
+    local prx="$1" root="$2"
+    [ -r "$prx" ] || die "missing package archive: $prx"
+    [ -d "$root" ] || die "missing target root: $root"
+    [ "$root" != "/" ] || die "install-local refuses /; choose an explicit target root"
+
+    local tmpdir package_id install_db file_list
+    tmpdir="$(mktemp -d -t prx-local-XXXXXX)"
+    package_id="$(validate_prx_archive "$prx")"
+    tar -xzf "$prx" -C "$tmpdir"
+
+    install_db="$root/var/lib/praxis-pkg/installed"
+    mkdir -p "$install_db"
+
+    if [ -n "$(pkginfo_value "$tmpdir/PKGINFO" deps)" ]; then
+        printf 'praxis-pkg: warning: dependencies are recorded but not resolved for local install: %s\n' "$package_id" >&2
+    fi
+
+    file_list="$install_db/${package_id}.files"
+    (
+        cd "$tmpdir/data"
+        find . -type f -o -type l -o -type d |
+            sed 's#^\./#/#' |
+            sort
+    ) > "$file_list"
+
+    tar -C "$tmpdir/data" -cf - . | tar -C "$root" -xf -
+    cp "$tmpdir/PKGINFO" "$install_db/${package_id}.PKGINFO"
+    {
+        printf 'id=%s\n' "$package_id"
+        printf 'source=%s\n' "$prx"
+        printf 'root=%s\n' "$root"
+    } > "$install_db/${package_id}.install"
+
+    rm -rf "$tmpdir"
+    printf 'installed local package: %s -> %s\n' "$package_id" "$root"
+}
+
+cmd_install_local() {
+    local target_root=""
+
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --root)
+                shift
+                target_root="${1:-}"
+                ;;
+            -h|--help)
+                print_usage
+                exit 0
+                ;;
+            -*)
+                die "unknown install-local option: $1"
+                ;;
+            *)
+                break
+                ;;
+        esac
+        shift
+    done
+
+    [ -n "$target_root" ] || die "install-local requires --root <target>"
+    [ "$#" -ge 1 ] || die "install-local expected at least one .prx file"
+
+    local prx
+    for prx in "$@"; do
+        install_prx_to_root "$prx" "$target_root"
+    done
+}
+
+cmd_validate_pkginfo() {
+    local file="${1:-}"
+    [ -n "$file" ] || die "expected PKGINFO file"
+    validate_pkginfo_file "$file"
+    printf 'PKGINFO valid: %s\n' "$file"
+}
+
+cmd_validate_index() {
+    local file="${1:-}"
+    [ -n "$file" ] || die "expected INDEX or INDEX.gz file"
+    validate_index_file "$file"
+    printf 'INDEX valid: %s\n' "$file"
+}
+
+cmd_inspect() {
+    local prx="${1:-}"
+    [ -n "$prx" ] || die "expected .prx file"
+    local tmpdir package_id
+    tmpdir="$(mktemp -d -t prx-inspect-XXXXXX)"
+    package_id="$(validate_prx_archive "$prx")"
+    tar -xzf "$prx" -C "$tmpdir"
+
+    printf 'package: %s\n' "$package_id"
+    printf 'archive: %s\n' "$prx"
+    printf 'version: %s\n' "$(pkginfo_value "$tmpdir/PKGINFO" version)"
+    printf 'arch:    %s\n' "$(pkginfo_value "$tmpdir/PKGINFO" arch)"
+    printf 'desc:    %s\n' "$(pkginfo_value "$tmpdir/PKGINFO" desc)"
+    deps="$(pkginfo_value "$tmpdir/PKGINFO" deps)"
+    printf 'deps:    %s\n' "${deps:-none}"
+    printf 'files:\n'
+    tar -tzf "$prx" | sed 's/^/  /'
     rm -rf "$tmpdir"
 }
 
@@ -272,8 +530,12 @@ case "$cmd" in
     info)    cmd_info "$@" ;;
     search)  cmd_search "$@" ;;
     install) cmd_install "$@" ;;
+    install-local) cmd_install_local "$@" ;;
     remove)  cmd_remove "$@" ;;
     repos)   cmd_repos "$@" ;;
+    validate-pkginfo) cmd_validate_pkginfo "$@" ;;
+    validate-index)   cmd_validate_index "$@" ;;
+    inspect)          cmd_inspect "$@" ;;
     help|--help|-h) print_usage ;;
     *) die "unknown command: $cmd" ;;
 esac

@@ -10,7 +10,10 @@ artifact_path="${KERNEL_ARTIFACT:-$kernel_dir/bzImage}"
 requested_version="${KERNEL_VERSION:-latest}"
 kernel_arch="${KERNEL_MAKE_ARCH:-x86}"
 kernel_config="${KERNEL_CONFIG:-$kernel_dir/config}"
-kernel_config_fragment="${KERNEL_CONFIG_FRAGMENT:-$kernel_dir/config.fragment}"
+kernel_profile="${PROFILE:-${KERNEL_PROFILE:-stock}}"
+kernel_profile_dir="${KERNEL_PROFILE_DIR:-$kernel_dir/profiles}"
+kernel_profile_fragment="$kernel_profile_dir/$kernel_profile.fragment"
+kernel_config_fragment="${KERNEL_CONFIG_FRAGMENT:-$kernel_profile_fragment}"
 jobs="${KERNEL_JOBS:-$(nproc 2>/dev/null || printf '1')}"
 
 require_tool() {
@@ -86,9 +89,55 @@ fetch_kernel_source() {
 
 enable_kernel_option() {
   local option="$1"
+  local symbol="${option%%=*}"
+  local value="${option#*=}"
 
-  "$source_dir/scripts/config" --file "$build_dir/.config" --enable "$option"
+  symbol="${symbol#CONFIG_}"
+
+  case "$value" in
+    y)
+      "$source_dir/scripts/config" --file "$build_dir/.config" --enable "$symbol"
+      ;;
+    m)
+      "$source_dir/scripts/config" --file "$build_dir/.config" --module "$symbol"
+      ;;
+    n)
+      "$source_dir/scripts/config" --file "$build_dir/.config" --disable "$symbol"
+      ;;
+    *)
+      echo "invalid kernel config value: $option" >&2
+      exit 1
+      ;;
+  esac
 }
+
+validate_profile_name() {
+  local profile_name="$1"
+
+  if [[ ! "$profile_name" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "invalid kernel profile: $profile_name" >&2
+    exit 1
+  fi
+}
+
+validate_profile_name "$kernel_profile"
+
+if [[ -z "${KERNEL_CONFIG_FRAGMENT:-}" && ! -f "$kernel_config_fragment" ]]; then
+  echo "unknown kernel profile: $kernel_profile" >&2
+  echo "expected profile fragment: $kernel_config_fragment" >&2
+  exit 1
+fi
+
+if [[ -f "$kernel_config_fragment" ]]; then
+  while IFS= read -r config_line || [[ -n "$config_line" ]]; do
+    [[ -n "$config_line" ]] || continue
+    [[ "$config_line" =~ ^# ]] && continue
+    if [[ ! "$config_line" =~ ^CONFIG_[A-Z0-9_]+=(y|m|n)$ ]]; then
+      echo "invalid kernel profile line in $kernel_config_fragment: $config_line" >&2
+      exit 1
+    fi
+  done < "$kernel_config_fragment"
+fi
 
 for tool in make gcc perl awk sed xz flex bison bc; do
   require_tool "$tool"
@@ -109,7 +158,8 @@ else
 fi
 
 if [[ -f "$kernel_config_fragment" ]]; then
-  while read -r config_line; do
+  printf 'Applying Praxis kernel profile %s from %s\n' "$kernel_profile" "$kernel_config_fragment"
+  while IFS= read -r config_line || [[ -n "$config_line" ]]; do
     [[ -n "$config_line" ]] || continue
     [[ "$config_line" =~ ^# ]] && continue
     enable_kernel_option "$config_line"
@@ -117,9 +167,30 @@ if [[ -f "$kernel_config_fragment" ]]; then
   make -C "$source_dir" O="$build_dir" ARCH="$kernel_arch" olddefconfig
 fi
 
+applied_profile_path="$kernel_dir/PROFILE.applied"
+{
+  printf 'PROFILE=%s\n' "$kernel_profile"
+  printf 'KERNEL_VERSION=%s\n' "$kernel_version"
+  printf 'KERNEL_ARCH=%s\n' "$kernel_arch"
+  printf 'CONFIG_FRAGMENT=%s\n' "$kernel_config_fragment"
+  printf 'BUILD_DIR=%s\n' "$build_dir"
+  printf 'SOURCE_DIR=%s\n' "$source_dir"
+  printf 'OPTIONS_BEGIN\n'
+  if [[ -f "$kernel_config_fragment" ]]; then
+    sed -e '/^[[:space:]]*$/d' -e '/^[[:space:]]*#/d' "$kernel_config_fragment"
+  fi
+  printf 'OPTIONS_END\n'
+} > "$applied_profile_path"
+
 make -C "$source_dir" O="$build_dir" ARCH="$kernel_arch" -j"$jobs" bzImage
 
 install -Dm644 "$build_dir/arch/x86/boot/bzImage" "$artifact_path"
 printf '%s\n' "$kernel_version" > "$kernel_dir/VERSION"
+printf '%s\n' "$kernel_profile" > "$kernel_dir/PROFILE"
+"$repo_root/scripts/build-metadata.sh" \
+  "$kernel_dir/build-info" \
+  "$artifact_path" \
+  "$kernel_config_fragment" \
+  "$applied_profile_path"
 
-printf 'Built Praxis kernel %s at %s\n' "$kernel_version" "$artifact_path"
+printf 'Built Praxis kernel %s profile %s at %s\n' "$kernel_version" "$kernel_profile" "$artifact_path"

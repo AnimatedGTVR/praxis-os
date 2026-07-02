@@ -9,11 +9,18 @@ internal static class Program
     {
         if (args.Length == 0)
         {
-            Console.Error.WriteLine("usage: pax-interpreter <file.pax>");
+            Console.Error.WriteLine("usage: pax-interpreter [--v2] <file.pax>");
             return 1;
         }
 
-        var filePath = args[0];
+        var forceV2 = args[0] == "--v2";
+        var filePath = forceV2 ? args.ElementAtOrDefault(1) : args[0];
+        if (filePath is null)
+        {
+            Console.Error.WriteLine("usage: pax-interpreter [--v2] <file.pax>");
+            return 1;
+        }
+
         if (!File.Exists(filePath))
         {
             Console.Error.WriteLine($"missing PAX file: {filePath}");
@@ -24,6 +31,13 @@ internal static class Program
         {
             var source = File.ReadAllText(filePath);
             var header = PaxHeader.Parse(source);
+            if (forceV2 || header.Label.Contains("v2", StringComparison.OrdinalIgnoreCase))
+            {
+                var interpreterV2 = new PaxV2Interpreter();
+                interpreterV2.Execute(header);
+                return 0;
+            }
+
             var lexer = new Lexer(header.Body, header.BodyStartLine);
             var tokens = lexer.Tokenize();
             var parser = new Parser(tokens);

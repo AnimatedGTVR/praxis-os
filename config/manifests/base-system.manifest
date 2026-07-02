@@ -1,0 +1,31 @@
+# Praxis base-system manifest
+#
+# Format:
+# path|type|owner|note
+#
+# type is one of: file, dir, link
+# This manifest is audit input. It does not create or repair files.
+
+path|file|/init|praxis|live init handoff
+path|file|/bin/busybox|praxis|static busybox userspace
+path|link|/bin/sh|praxis|default shell link
+path|file|/etc/os-release|praxis|distro identity
+path|file|/etc/praxis/praxis.env|praxis|runtime policy
+path|file|/etc/praxis/live-tools.manifest|praxis|live tool ledger
+path|file|/etc/praxis/repos.conf|praxis|native package repository config
+path|dir|/etc/praxis/choices|praxis|hard choice catalogs
+path|dir|/etc/praxis/packages|praxis|package choice catalogs
+path|dir|/etc/praxis/seeds|praxis|explicit seed ledgers
+path|file|/usr/local/bin/praxis-choice|praxis|choice inspector
+path|file|/usr/local/bin/praxis-contract|praxis|contract export and verifier
+path|file|/usr/local/bin/praxis-seed|praxis|seed ledger runner
+path|file|/usr/local/bin/praxis-recover|praxis|manual recovery ledger
+path|file|/usr/local/bin/praxis-provenance|praxis|build provenance inspector
+path|file|/usr/local/bin/praxis-pkg|praxis|native package format inspector
+path|file|/usr/local/bin/praxis-packages|praxis|package chooser
+path|file|/usr/local/bin/targetcheck|praxis|target auditor
+path|file|/usr/share/praxis/vmlinuz|praxis|kernel artifact
+path|file|/usr/share/praxis/kernel/config.fragment|praxis|kernel base fragment
+path|dir|/usr/share/praxis/kernel/profiles|praxis|kernel profile fragments
+path|file|/usr/share/doc/praxis/V2.md|praxis|v2 contract docs
+path|file|/usr/share/doc/praxis/pax/spec/PAX-V2.md|praxis|pax v2 contract docs

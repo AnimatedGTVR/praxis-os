@@ -115,7 +115,10 @@ mkdir -p \
   "$stage_dir/dev/pts" \
   "$stage_dir/etc/pacman.d" \
   "$stage_dir/etc/praxis" \
+  "$stage_dir/etc/praxis/choices" \
+  "$stage_dir/etc/praxis/manifests" \
   "$stage_dir/etc/praxis/packages" \
+  "$stage_dir/etc/praxis/seeds" \
   "$stage_dir/proc" \
   "$stage_dir/root" \
   "$stage_dir/run" \
@@ -126,10 +129,12 @@ mkdir -p \
   "$stage_dir/usr/share/doc/praxis" \
   "$stage_dir/usr/share/doc/praxis/pax/examples" \
   "$stage_dir/usr/share/doc/praxis/pax/spec" \
+  "$stage_dir/usr/share/doc/praxis/pax/tests" \
   "$stage_dir/usr/share/libalpm" \
   "$stage_dir/usr/share/pacman" \
   "$stage_dir/usr/share/praxis/boot" \
   "$stage_dir/usr/share/praxis/branding/fastfetch" \
+  "$stage_dir/usr/share/praxis/kernel/profiles" \
   "$stage_dir/usr/share/praxis" \
   "$stage_dir/var/cache/pacman/pkg" \
   "$stage_dir/var/lib/pacman" \
@@ -148,13 +153,20 @@ cp "$repo_root/installer/preflight" "$stage_dir/usr/local/bin/preflight"
 cp "$repo_root/installer/praxis-disk-report" "$stage_dir/usr/local/bin/praxis-disk-report"
 cp "$repo_root/installer/praxis-netcheck" "$stage_dir/usr/local/bin/praxis-netcheck"
 cp "$repo_root/installer/praxis-support" "$stage_dir/usr/local/bin/praxis-support"
+cp "$repo_root/installer/praxis-recover" "$stage_dir/usr/local/bin/praxis-recover"
 cp "$repo_root/installer/praxis-postinstall" "$stage_dir/usr/local/bin/praxis-postinstall"
 cp "$repo_root/installer/praxis-install" "$stage_dir/usr/local/bin/praxis-install"
 cp "$repo_root/installer/mkinitrd" "$stage_dir/usr/local/bin/mkinitrd"
 cp "$repo_root/installer/praxis-chroot" "$stage_dir/usr/local/bin/praxis-chroot"
+cp "$repo_root/installer/praxis-pkg" "$stage_dir/usr/local/bin/praxis-pkg"
 cp "$repo_root/installer/praxis-packages" "$stage_dir/usr/local/bin/praxis-packages"
 cp "$repo_root/installer/praxis-desktop" "$stage_dir/usr/local/bin/praxis-desktop"
 cp "$repo_root/installer/praxis-desktop-fix" "$stage_dir/usr/local/bin/praxis-desktop-fix"
+cp "$repo_root/installer/praxis-choice" "$stage_dir/usr/local/bin/praxis-choice"
+cp "$repo_root/installer/praxis-contract" "$stage_dir/usr/local/bin/praxis-contract"
+cp "$repo_root/installer/praxis-manifest" "$stage_dir/usr/local/bin/praxis-manifest"
+cp "$repo_root/installer/praxis-provenance" "$stage_dir/usr/local/bin/praxis-provenance"
+cp "$repo_root/installer/praxis-seed" "$stage_dir/usr/local/bin/praxis-seed"
 cp "$repo_root/installer/targetcheck" "$stage_dir/usr/local/bin/targetcheck"
 cp "$repo_root/installer/praxis-disk" "$stage_dir/usr/local/bin/praxis-disk"
 cp "$repo_root/installer/praxis-init" "$stage_dir/usr/local/bin/praxis-init"
@@ -163,9 +175,13 @@ cp "$repo_root/installer/praxis-dev-install" "$stage_dir/usr/local/bin/praxis-de
 ln -snf praxis-lsblk "$stage_dir/usr/local/bin/lsblk"
 
 cp "$repo_root/config/praxis.env" "$stage_dir/etc/praxis/praxis.env"
+cp "$repo_root/rootfs/etc/praxis/repos.conf" "$stage_dir/etc/praxis/repos.conf"
 cp "$repo_root/config/base.manifest" "$stage_dir/etc/praxis/base.manifest"
 cp "$repo_root/config/live-tools.manifest" "$stage_dir/etc/praxis/live-tools.manifest"
+cp -a "$repo_root/config/choices/." "$stage_dir/etc/praxis/choices/"
+cp -a "$repo_root/config/manifests/." "$stage_dir/etc/praxis/manifests/"
 cp -a "$repo_root/config/packages/." "$stage_dir/etc/praxis/packages/"
+cp -a "$repo_root/config/seeds/." "$stage_dir/etc/praxis/seeds/"
 cp "$repo_root/README.md" "$stage_dir/usr/share/doc/praxis/README.md"
 cp "$repo_root/Documentation/DOC.md" "$stage_dir/usr/share/doc/praxis/DOC.md"
 cp "$repo_root/Documentation/INSTALL.md" "$stage_dir/usr/share/doc/praxis/INSTALL.md"
@@ -173,6 +189,8 @@ cp "$repo_root/Documentation/QEMU.md" "$stage_dir/usr/share/doc/praxis/QEMU.md"
 cp "$repo_root/Documentation/COMMANDS.md" "$stage_dir/usr/share/doc/praxis/COMMANDS.md"
 cp "$repo_root/Documentation/FIRST-BOOT.md" "$stage_dir/usr/share/doc/praxis/FIRST-BOOT.md"
 cp "$repo_root/Documentation/TROUBLESHOOTING.md" "$stage_dir/usr/share/doc/praxis/TROUBLESHOOTING.md"
+cp "$repo_root/docs/v2.md" "$stage_dir/usr/share/doc/praxis/V2.md"
+cp "$repo_root/docs/pkg-format.md" "$stage_dir/usr/share/doc/praxis/PKG-FORMAT.md"
 if [[ -f "$repo_root/Documentation/CHANGELOG.md" ]]; then
   cp "$repo_root/Documentation/CHANGELOG.md" "$stage_dir/usr/share/doc/praxis/CHANGELOG.md"
 fi
@@ -182,7 +200,9 @@ fi
 cp "$repo_root/pax/README.md" "$stage_dir/usr/share/doc/praxis/pax/README.md"
 cp "$repo_root/pax/spec/PAX.md" "$stage_dir/usr/share/doc/praxis/PAX.md"
 cp "$repo_root/pax/spec/PAX.md" "$stage_dir/usr/share/doc/praxis/pax/spec/PAX.md"
+cp "$repo_root/pax/spec/PAX-V2.md" "$stage_dir/usr/share/doc/praxis/pax/spec/PAX-V2.md"
 cp -a "$repo_root/pax/examples/." "$stage_dir/usr/share/doc/praxis/pax/examples/"
+cp -a "$repo_root/pax/tests/." "$stage_dir/usr/share/doc/praxis/pax/tests/"
 cp "$repo_root/branding/fastfetch/praxis.txt" "$stage_dir/usr/share/praxis/branding/fastfetch/praxis.txt"
 cp "$repo_root/branding/fastfetch/praxis-text.txt" "$stage_dir/usr/share/praxis/branding/fastfetch/praxis-text.txt"
 
@@ -218,6 +238,14 @@ if [[ -z "${kernel_image:-}" ]]; then
 fi
 cp "$kernel_image" "$stage_dir/usr/share/praxis/vmlinuz"
 cp "$repo_root/boot/limine.conf" "$stage_dir/usr/share/praxis/limine.conf"
+cp "$repo_root/kernel/config.fragment" "$stage_dir/usr/share/praxis/kernel/config.fragment"
+cp -a "$repo_root/kernel/profiles/." "$stage_dir/usr/share/praxis/kernel/profiles/"
+if [[ -f "$repo_root/kernel/build-info" ]]; then
+  cp "$repo_root/kernel/build-info" "$stage_dir/usr/share/praxis/kernel/build-info"
+fi
+if [[ -f "$repo_root/kernel/PROFILE.applied" ]]; then
+  cp "$repo_root/kernel/PROFILE.applied" "$stage_dir/usr/share/praxis/kernel/PROFILE.applied"
+fi
 
 limine_dir="$(find_limine_dir || true)"
 if [[ -n "$limine_dir" && -f "$limine_dir/BOOTX64.EFI" ]]; then
@@ -299,22 +327,38 @@ chmod +x \
   "$stage_dir/usr/local/bin/praxis-disk-report" \
   "$stage_dir/usr/local/bin/praxis-netcheck" \
   "$stage_dir/usr/local/bin/praxis-support" \
+  "$stage_dir/usr/local/bin/praxis-recover" \
   "$stage_dir/usr/local/bin/praxis-postinstall" \
   "$stage_dir/usr/local/bin/praxis-install" \
   "$stage_dir/usr/local/bin/mkinitrd" \
   "$stage_dir/usr/local/bin/praxis-chroot" \
+  "$stage_dir/usr/local/bin/praxis-pkg" \
   "$stage_dir/usr/local/bin/praxis-packages" \
   "$stage_dir/usr/local/bin/praxis-desktop" \
   "$stage_dir/usr/local/bin/praxis-desktop-fix" \
+  "$stage_dir/usr/local/bin/praxis-choice" \
+  "$stage_dir/usr/local/bin/praxis-contract" \
+  "$stage_dir/usr/local/bin/praxis-manifest" \
+  "$stage_dir/usr/local/bin/praxis-provenance" \
+  "$stage_dir/usr/local/bin/praxis-seed" \
   "$stage_dir/usr/local/bin/targetcheck" \
   "$stage_dir/usr/local/bin/praxis-disk" \
   "$stage_dir/usr/local/bin/praxis-init" \
   "$stage_dir/usr/local/bin/praxis-live" \
   "$stage_dir/usr/local/bin/praxis-dev-install"
 
-cat > "$stage_dir/etc/praxis/build-info" <<EOF
-BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-BUILD_SOURCE=$repo_root
-EOF
+"$repo_root/scripts/build-metadata.sh" \
+  "$stage_dir/etc/praxis/build-info" \
+  "$kernel_image" \
+  "$busybox_path"
+
+(
+  cd "$stage_dir"
+  find . -type f \
+    ! -path './etc/praxis/rootfs.sha256' \
+    -print0 |
+    sort -z |
+    xargs -0 sha256sum > etc/praxis/rootfs.sha256
+)
 
 printf 'Staged Praxis rootfs at %s\n' "$stage_dir"

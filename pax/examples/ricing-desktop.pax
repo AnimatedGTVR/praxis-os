@@ -1,28 +1,21 @@
-[.Praxis Config - ricing-desktop profile .praxis.pax./]
+[.Praxis Config - ricing desktop v2 .praxis.pax./]
 
-# Define a desktop setup meant for theming and ricing work.
-# All packages use reverse-domain identifiers.
+# Desktop theming support packages in PAX v2 form.
 
-profile "ricing-desktop"
-{
-    desktop    = plasma
-    compositor = dev.praxis.picom
-    launcher   = dev.praxis.rofi
-    bar        = dev.praxis.polybar
-    terminal   = dev.praxis.kitty
+let Desktop desktop = plasma
+let List<Package> ricing_packages = [
+    pkg dev.praxis.picom,
+    pkg dev.praxis.rofi,
+    pkg dev.praxis.polybar,
+    pkg dev.praxis.kitty
+]
+
+for pkg in ricing_packages {
+    install package pkg
+    assert state.package.last_install == pkg "ricing package install did not land"
 }
 
-# Install the desktop support tools first.
-install package profile.compositor
-install package profile.launcher
-install package profile.bar
-install package profile.terminal
+install desktop desktop
+assert state.desktop.current == desktop "desktop did not install"
 
-# Enable the chosen desktop after the supporting tools are ready.
-enable desktop profile.desktop
-
-# Print a final status once the desktop path is active.
-if install.status == finished
-{
-    print "Ricing desktop profile applied."
-}
+log "Ricing desktop profile applied."

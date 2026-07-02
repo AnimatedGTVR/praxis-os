@@ -12,14 +12,14 @@ BUSYBOX := userspace/busybox
 QEMU_DISK_FILE := $(BUILD_DIR)/praxis.qcow2
 QEMU_DISK_SIZE ?= 16G
 
-.PHONY: help kernel userspace rootfs initramfs iso iso-full rootfs-full initramfs-full qemu QEMU qmec qemc qemu-disk qemu-chroot qemu-full qemu-install qemu-installed smoke dev-install check check-owned check-pax v1-check clean
+.PHONY: help kernel userspace rootfs initramfs iso iso-full rootfs-full initramfs-full qemu QEMU qmec qemc qemu-disk qemu-chroot qemu-full qemu-install qemu-installed smoke dev-install check check-contract check-owned check-pax check-pkg-format check-init-profiles check-kernel-profiles check-manifests check-reproducible check-seeds check-target-audit v1-check v2-half-check v2-check clean
 
 help:
 	@echo "Praxis"
 	@echo
 	@echo "Targets:"
 	@echo "  make rootfs     Stage the Praxis root filesystem"
-	@echo "  make kernel     Build the Praxis kernel artifact"
+	@echo "  make kernel PROFILE=stock|tiny|hardened Build the Praxis kernel artifact"
 	@echo "  make userspace  Build the Praxis BusyBox userspace"
 	@echo "  make initramfs  Build the Praxis initramfs"
 	@echo "  make iso        Build the Praxis ISO"
@@ -37,14 +37,24 @@ help:
 	@echo "  make smoke      Verify Praxis reaches the shell prompt in QEMU"
 	@echo "  make dev-install TARGET=/mnt/praxis-dev"
 	@echo "  make check      Run shell, staging, and PAX sanity checks"
+	@echo "  make check-contract Validate contract export/inspect/verify"
 	@echo "  make check-owned Verify the default rootfs uses Praxis-owned artifacts"
 	@echo "  make check-pax  Validate PAX headers, examples, and doc references"
+	@echo "  make check-pkg-format Validate .prx metadata and index rules"
+	@echo "  make check-init-profiles Validate init choice/profile wiring"
+	@echo "  make check-kernel-profiles Validate kernel choice/profile wiring"
+	@echo "  make check-manifests Validate base-system and package manifests"
+	@echo "  make check-reproducible Validate provenance and reproducible metadata"
+	@echo "  make check-seeds Validate Praxis seed ledgers"
+	@echo "  make check-target-audit Validate strict targetcheck behavior"
 	@echo "  make v1-check   Run owned-rootfs, sanity, and smoke boot checks"
+	@echo "  make v2-half-check Validate the Praxis v2-half contract"
+	@echo "  make v2-check   Validate most of the Praxis v2 contract"
 	@echo "  make clean      Remove build artifacts"
 
 kernel: $(KERNEL_IMAGE)
 
-$(KERNEL_IMAGE): scripts/build-kernel.sh kernel/config.fragment
+$(KERNEL_IMAGE): scripts/build-kernel.sh kernel/config.fragment kernel/profiles/stock.fragment kernel/profiles/tiny.fragment kernel/profiles/hardened.fragment
 	@./scripts/build-kernel.sh
 
 userspace: $(BUSYBOX)
@@ -114,14 +124,44 @@ dev-install: kernel
 check:
 	@./scripts/sanity-check.sh
 
+check-contract:
+	@./scripts/check-contract.sh
+
 check-owned:
 	@./scripts/check-rootfs-owned.sh
 
 check-pax:
 	@./scripts/check-pax.sh
 
+check-pkg-format:
+	@./scripts/check-pkg-format.sh
+
+check-init-profiles:
+	@./scripts/check-init-profiles.sh
+
+check-kernel-profiles:
+	@./scripts/check-kernel-profiles.sh
+
+check-manifests:
+	@./scripts/check-manifests.sh
+
+check-reproducible:
+	@./scripts/check-reproducible.sh
+
+check-seeds:
+	@./scripts/check-seeds.sh
+
+check-target-audit:
+	@./scripts/check-target-audit.sh
+
 v1-check: iso
 	@./scripts/v1-check.sh
+
+v2-half-check:
+	@./scripts/v2-half-check.sh
+
+v2-check:
+	@./scripts/v2-check.sh
 
 clean:
 	rm -rf "$(BUILD_DIR)"

@@ -7,12 +7,22 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 bash -n "$repo_root/scripts/build-rootfs.sh"
+bash -n "$repo_root/scripts/build-metadata.sh"
 bash -n "$repo_root/scripts/build-kernel.sh"
 bash -n "$repo_root/scripts/build-userspace.sh"
 bash -n "$repo_root/scripts/build-initramfs.sh"
 bash -n "$repo_root/scripts/build-iso.sh"
 bash -n "$repo_root/scripts/check-rootfs-owned.sh"
 bash -n "$repo_root/scripts/check-pax.sh"
+bash -n "$repo_root/scripts/check-pax-v2.sh"
+bash -n "$repo_root/scripts/check-contract.sh"
+bash -n "$repo_root/scripts/check-pkg-format.sh"
+bash -n "$repo_root/scripts/check-init-profiles.sh"
+bash -n "$repo_root/scripts/check-kernel-profiles.sh"
+bash -n "$repo_root/scripts/check-manifests.sh"
+bash -n "$repo_root/scripts/check-reproducible.sh"
+bash -n "$repo_root/scripts/check-seeds.sh"
+bash -n "$repo_root/scripts/check-target-audit.sh"
 bash -n "$repo_root/scripts/create-qemu-disk.sh"
 bash -n "$repo_root/scripts/qemu-chroot.sh"
 bash -n "$repo_root/scripts/repair-qemu-esp.sh"
@@ -33,13 +43,20 @@ sh -n "$repo_root/installer/praxis-disk-report"
 sh -n "$repo_root/installer/praxis-disk"
 sh -n "$repo_root/installer/praxis-netcheck"
 sh -n "$repo_root/installer/praxis-support"
+sh -n "$repo_root/installer/praxis-recover"
 sh -n "$repo_root/installer/praxis-postinstall"
 sh -n "$repo_root/installer/praxis-install"
 sh -n "$repo_root/installer/mkinitrd"
 sh -n "$repo_root/installer/praxis-chroot"
+sh -n "$repo_root/installer/praxis-pkg"
 sh -n "$repo_root/installer/praxis-packages"
 sh -n "$repo_root/installer/praxis-desktop"
 sh -n "$repo_root/installer/praxis-desktop-fix"
+sh -n "$repo_root/installer/praxis-choice"
+sh -n "$repo_root/installer/praxis-contract"
+sh -n "$repo_root/installer/praxis-manifest"
+sh -n "$repo_root/installer/praxis-provenance"
+sh -n "$repo_root/installer/praxis-seed"
 sh -n "$repo_root/installer/targetcheck"
 sh -n "$repo_root/installer/praxis-live"
 sh -n "$repo_root/installer/praxis-dev-install"
@@ -47,6 +64,15 @@ sh -n "$repo_root/installer/praxis-dev-install"
 "$repo_root/scripts/build-rootfs.sh" "$tmpdir/rootfs"
 "$repo_root/scripts/check-rootfs-owned.sh" "$tmpdir/rootfs" >/dev/null
 "$repo_root/scripts/check-pax.sh" >/dev/null
+"$repo_root/scripts/check-pax-v2.sh" >/dev/null
+"$repo_root/scripts/check-contract.sh" >/dev/null
+"$repo_root/scripts/check-pkg-format.sh" >/dev/null
+"$repo_root/scripts/check-init-profiles.sh" >/dev/null
+"$repo_root/scripts/check-kernel-profiles.sh" >/dev/null
+"$repo_root/scripts/check-manifests.sh" >/dev/null
+"$repo_root/scripts/check-reproducible.sh" >/dev/null
+"$repo_root/scripts/check-seeds.sh" >/dev/null
+"$repo_root/scripts/check-target-audit.sh" >/dev/null
 
 env \
   PATH="/bin:/usr/bin:$repo_root/installer" \
@@ -69,6 +95,12 @@ env \
 env \
   PATH="/bin:/usr/bin:$repo_root/installer" \
   PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  PRAXIS_CONFIG_ROOT="$repo_root/config" \
+  "$repo_root/installer/praxis-help" v2 >/dev/null
+
+env \
+  PATH="/bin:/usr/bin:$repo_root/installer" \
+  PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
   PRAXIS_PACKAGE_ROOT="$repo_root/config/packages" \
   "$repo_root/installer/praxis-packages" list >/dev/null
 
@@ -76,6 +108,69 @@ env \
   PATH="/bin:/usr/bin:$repo_root/installer" \
   PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
   "$repo_root/installer/praxis-desktop" list >/dev/null
+
+env \
+  PATH="/bin:/usr/bin:$repo_root/installer" \
+  PRAXIS_REPOS_CONF="$repo_root/rootfs/etc/praxis/repos.conf" \
+  "$repo_root/installer/praxis-pkg" repos >/dev/null
+
+env \
+  PATH="/bin:/usr/bin:$repo_root/installer" \
+  PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  PRAXIS_CONFIG_ROOT="$repo_root/config" \
+  "$repo_root/installer/praxis-choice" list >/dev/null
+
+env \
+  PATH="/bin:/usr/bin:$repo_root/installer" \
+  PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  PRAXIS_CONFIG_ROOT="$repo_root/config" \
+  "$repo_root/installer/praxis-manifest" list >/dev/null
+
+env \
+  PATH="/bin:/usr/bin:$repo_root/installer" \
+  PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  PRAXIS_CONFIG_ROOT="$repo_root/config" \
+  "$repo_root/installer/praxis-manifest" show base-system >/dev/null
+
+env \
+  PATH="/bin:/usr/bin:$repo_root/installer" \
+  PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  PRAXIS_CONFIG_ROOT="$tmpdir/rootfs/etc/praxis" \
+  "$repo_root/installer/praxis-manifest" verify base-system "$tmpdir/rootfs" >/dev/null
+
+env \
+  PATH="/bin:/usr/bin:$repo_root/installer" \
+  PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  "$repo_root/installer/praxis-provenance" "$tmpdir/rootfs" >/dev/null
+
+env \
+  PATH="/bin:/usr/bin:$repo_root/installer" \
+  PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  "$repo_root/installer/praxis-provenance" verify "$tmpdir/rootfs" >/dev/null
+
+env \
+  PATH="/bin:/usr/bin:$repo_root/installer" \
+  PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  PRAXIS_CONFIG_ROOT="$repo_root/config" \
+  "$repo_root/installer/praxis-choice" emit --kernel tiny --init busybox --bundle essentials >/dev/null
+
+env \
+  PATH="/bin:/usr/bin:$repo_root/installer" \
+  PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  PRAXIS_CONFIG_ROOT="$repo_root/config" \
+  "$repo_root/installer/praxis-choice" emit --kernel tiny --init busybox --bundle essentials > "$tmpdir/system.choice"
+
+env \
+  PATH="/bin:/usr/bin:$repo_root/installer" \
+  PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  PRAXIS_CONFIG_ROOT="$repo_root/config" \
+  "$repo_root/installer/praxis-choice" validate "$tmpdir/system.choice" >/dev/null
+
+env \
+  PATH="/bin:/usr/bin:$repo_root/installer" \
+  PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  PRAXIS_CONFIG_ROOT="$repo_root/config" \
+  "$repo_root/installer/praxis-choice" boot-entry "$tmpdir/system.choice" >/dev/null
 
 env \
   PATH="/bin:/usr/bin:$repo_root/installer" \
@@ -98,6 +193,17 @@ env \
   PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
   "$repo_root/installer/praxis-disk" /dev/vda /mnt/praxis --dry-run >/dev/null
 
+PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  PRAXIS_CONFIG_ROOT="$repo_root/config" \
+  "$repo_root/installer/praxis-seed" list >/dev/null
+
+PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  PRAXIS_CONFIG_ROOT="$repo_root/config" \
+  "$repo_root/installer/praxis-seed" show base >/dev/null
+
+PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  "$repo_root/installer/praxis-seed" --dry-run --seed "$repo_root/config/seeds/v2-half.seed" "$tmpdir/rootfs" >/dev/null
+
 env \
   PATH="/bin:/usr/bin:$repo_root/installer" \
   PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
@@ -108,6 +214,11 @@ env \
   PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
   PRAXIS_SUPPORT_OUT="$tmpdir/praxis-support.tar.gz" \
   "$repo_root/installer/praxis-support" >/dev/null
+
+env \
+  PATH="/bin:/usr/bin:$repo_root/installer" \
+  PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  "$repo_root/installer/praxis-recover" "$tmpdir/rootfs" >/dev/null
 
 env \
   PATH="/bin:/usr/bin:$repo_root/installer" \
@@ -169,20 +280,38 @@ test -f "$tmpdir/rootfs/usr/local/bin/praxis-disk-report"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-disk"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-netcheck"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-support"
+test -f "$tmpdir/rootfs/usr/local/bin/praxis-recover"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-postinstall"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-install"
 test -f "$tmpdir/rootfs/usr/local/bin/mkinitrd"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-chroot"
+test -f "$tmpdir/rootfs/usr/local/bin/praxis-pkg"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-packages"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-desktop"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-desktop-fix"
+test -f "$tmpdir/rootfs/usr/local/bin/praxis-choice"
+test -f "$tmpdir/rootfs/usr/local/bin/praxis-contract"
+test -f "$tmpdir/rootfs/usr/local/bin/praxis-manifest"
+test -f "$tmpdir/rootfs/usr/local/bin/praxis-provenance"
+test -f "$tmpdir/rootfs/usr/local/bin/praxis-seed"
 test -f "$tmpdir/rootfs/usr/local/bin/targetcheck"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-live"
 test -f "$tmpdir/rootfs/usr/local/bin/praxis-dev-install"
 test -f "$tmpdir/rootfs/etc/praxis/praxis.env"
+test -f "$tmpdir/rootfs/etc/praxis/build-info"
 test -f "$tmpdir/rootfs/etc/praxis/live-tools.manifest"
+test -f "$tmpdir/rootfs/etc/praxis/repos.conf"
+test -f "$tmpdir/rootfs/etc/praxis/rootfs.sha256"
+test -f "$tmpdir/rootfs/etc/praxis/choices/kernel/tiny.conf"
+test -f "$tmpdir/rootfs/etc/praxis/choices/init/busybox.conf"
+grep -qx 'REQUIRED_FILES=/init,/bin/busybox' "$tmpdir/rootfs/etc/praxis/choices/init/busybox.conf"
+test -f "$tmpdir/rootfs/etc/praxis/manifests/base-system.manifest"
 test -d "$tmpdir/rootfs/etc/praxis/packages/desktops"
 test -d "$tmpdir/rootfs/etc/praxis/packages/bundles"
+test -f "$tmpdir/rootfs/etc/praxis/seeds/base.seed"
+test -f "$tmpdir/rootfs/etc/praxis/seeds/workstation.seed"
+test -f "$tmpdir/rootfs/etc/praxis/seeds/recovery.seed"
+test -f "$tmpdir/rootfs/etc/praxis/seeds/v2-half.seed"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/README.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/DOC.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/INSTALL.md"
@@ -191,11 +320,17 @@ test -f "$tmpdir/rootfs/usr/share/doc/praxis/COMMANDS.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/FIRST-BOOT.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/TROUBLESHOOTING.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/PACKAGES.md"
+test -f "$tmpdir/rootfs/usr/share/doc/praxis/PKG-FORMAT.md"
+test -f "$tmpdir/rootfs/usr/share/doc/praxis/V2.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/PAX.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/README.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/spec/PAX.md"
+test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/spec/PAX-V2.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/packageinstall-config.pax"
+test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/full-install-v2.pax"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/source-pkg.pax"
+test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/tests/v2-invalid/dangerous-without-assert.pax"
+test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/tests/v2-invalid/unknown-dotted-path.pax"
 test ! -e "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/source-pkg.pkg.pax"
 test ! -e "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/sourcepkg-config.pkg.pax"
 test -f "$tmpdir/rootfs/bin/mount"
@@ -208,6 +343,11 @@ test -f "$tmpdir/rootfs/etc/hostname"
 test -f "$tmpdir/rootfs/etc/os-release"
 test -f "$tmpdir/rootfs/etc/xdg/fastfetch/config.jsonc"
 test -f "$tmpdir/rootfs/usr/share/praxis/vmlinuz"
+test -f "$tmpdir/rootfs/usr/share/praxis/kernel/config.fragment"
+test -f "$tmpdir/rootfs/usr/share/praxis/kernel/profiles/stock.fragment"
+test -f "$tmpdir/rootfs/usr/share/praxis/kernel/profiles/tiny.fragment"
+test -f "$tmpdir/rootfs/usr/share/praxis/kernel/profiles/hardened.fragment"
+grep -qx 'CONFIG_VT=y' "$tmpdir/rootfs/usr/share/praxis/kernel/profiles/stock.fragment"
 test ! -e "$tmpdir/rootfs/usr/local/bin/praxis-harder-than-hell"
 test ! -e "$tmpdir/rootfs/usr/local/bin/praxis-wiki"
 test -f "$tmpdir/live-dev-root/usr/local/bin/praxis-live"

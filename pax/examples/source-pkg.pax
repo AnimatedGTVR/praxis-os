@@ -1,19 +1,14 @@
-[.Praxis Config - source-pkg package definition .praxis.pax./]
+[.Praxis Config - source package v2 .praxis.pax./]
 
-# Define a package that should be built through the Praxis source-pkg flow.
-package "source-pkg"
-{
-    source       = dev.praxis.mesa-git
-    compile      = true
-    compile_mode = source
-    optimize     = true
-}
+# Source package workflow expressed as explicit package identity plus command.
 
-# Simulate the source build path for the selected package.
-compile package package.source
+let Package source_package = pkg dev.praxis.mesa_git
+let Command build_command = "praxis-pkg build-source dev.praxis.mesa-git"
 
-# Confirm that the source compile stage completed.
-if compile.status == finished
-{
-    print "source-pkg profile compiled."
-}
+install package source_package
+assert state.package.last_install == source_package "source package metadata did not install"
+
+exec command build_command
+assert state.exec.code == 0 "source build command failed"
+
+log "Source package workflow complete."

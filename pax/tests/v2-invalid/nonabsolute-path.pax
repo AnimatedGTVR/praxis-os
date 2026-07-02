@@ -1,0 +1,6 @@
+[.Praxis Config - nonabsolute path v2 .praxis.pax./]
+
+const Path TARGET = "mnt/praxis"
+
+mkdir TARGET
+assert state.file.last_mkdir == TARGET "target directory was not created"

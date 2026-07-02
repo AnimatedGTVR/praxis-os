@@ -1,0 +1,231 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+usage() {
+    printf 'usage:\n' >&2
+    printf '  praxis-seed list\n' >&2
+    printf '  praxis-seed show <name>\n' >&2
+    printf '  praxis-seed [--dry-run] [--seed <file|name>] <target>\n' >&2
+}
+
+DRY_RUN=0
+SEED_FILE="${PRAXIS_SEED_FILE:-}"
+TARGET_ROOT=''
+ACTION='apply'
+
+seed_root() {
+    if [ -n "${PRAXIS_SEED_ROOT:-}" ] && [ -d "${PRAXIS_SEED_ROOT}" ]; then
+        printf '%s\n' "${PRAXIS_SEED_ROOT}"
+        return 0
+    fi
+
+    if [ -d "$(praxis_config_root)/seeds" ]; then
+        printf '%s\n' "$(praxis_config_root)/seeds"
+        return 0
+    fi
+
+    if [ -d "${SCRIPT_DIR}/../config/seeds" ]; then
+        printf '%s\n' "${SCRIPT_DIR}/../config/seeds"
+        return 0
+    fi
+
+    return 1
+}
+
+resolve_seed_file() {
+    seed_name="$1"
+
+    if [ -r "${seed_name}" ]; then
+        printf '%s\n' "${seed_name}"
+        return 0
+    fi
+
+    root="$(seed_root || true)"
+    [ -n "${root}" ] || return 1
+
+    case "${seed_name}" in
+        *.seed) candidate="${root}/${seed_name}" ;;
+        *) candidate="${root}/${seed_name}.seed" ;;
+    esac
+
+    [ -r "${candidate}" ] || return 1
+    printf '%s\n' "${candidate}"
+}
+
+list_seeds() {
+    root="$(seed_root || true)"
+    [ -n "${root}" ] || return 1
+
+    for seed_path in "${root}/"*.seed; do
+        [ -f "${seed_path}" ] || continue
+        basename "${seed_path}" .seed
+    done | sort
+}
+
+if [ "${1:-}" = "list" ]; then
+    list_seeds | sed 's/^/  - /'
+    exit 0
+fi
+
+if [ "${1:-}" = "show" ]; then
+    [ "$#" -ge 2 ] || { usage; exit 1; }
+    SEED_FILE="$(resolve_seed_file "$2" || true)"
+    [ -n "${SEED_FILE}" ] || { printf 'unknown seed: %s\n' "$2" >&2; exit 1; }
+    cat "${SEED_FILE}"
+    exit 0
+fi
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --dry-run)
+            DRY_RUN=1
+            shift
+            ;;
+        --seed)
+            [ "$#" -ge 2 ] || { usage; exit 1; }
+            SEED_FILE="$(resolve_seed_file "$2" || true)"
+            [ -n "${SEED_FILE}" ] || { printf 'unknown seed: %s\n' "$2" >&2; exit 1; }
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -*)
+            usage
+            exit 1
+            ;;
+        *)
+            [ -z "${TARGET_ROOT}" ] || { usage; exit 1; }
+            TARGET_ROOT="$1"
+            shift
+            ;;
+    esac
+done
+
+[ -n "${TARGET_ROOT}" ] || { usage; exit 1; }
+
+if [ -z "${SEED_FILE}" ]; then
+    SEED_FILE="$(resolve_seed_file v2-half || true)"
+    if [ -z "${SEED_FILE}" ]; then
+        printf 'missing default seed: v2-half\n' >&2
+        exit 1
+    fi
+fi
+
+[ -r "${SEED_FILE}" ] || { printf 'missing seed file: %s\n' "${SEED_FILE}" >&2; exit 1; }
+[ -d "${TARGET_ROOT}" ] || { printf 'missing target root: %s\n' "${TARGET_ROOT}" >&2; exit 1; }
+
+seed_target_path() {
+    seed_path="${1:-}"
+
+    case "${seed_path}" in
+        /*) ;;
+        *) printf 'seed path must be absolute: %s\n' "${seed_path}" >&2; return 1 ;;
+    esac
+
+    case "${seed_path}" in
+        *'/../'*|*/..|'../'*|..)
+            printf 'seed path must not contain ..: %s\n' "${seed_path}" >&2
+            return 1
+            ;;
+    esac
+
+    printf '%s%s\n' "${TARGET_ROOT}" "${seed_path}"
+}
+
+seed_run() {
+    if [ "${DRY_RUN}" = "1" ]; then
+        printf '[dry-run] %s\n' "$*"
+        return 0
+    fi
+
+    "$@"
+}
+
+praxis_header "Seed"
+printf 'seed: %s\n' "${SEED_FILE}"
+printf 'target: %s\n' "${TARGET_ROOT}"
+printf '\n'
+
+line_no=0
+while IFS= read -r raw_line || [ -n "${raw_line}" ]; do
+    line_no=$((line_no + 1))
+    line="${raw_line%%#*}"
+    line="$(printf '%s\n' "${line}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    [ -n "${line}" ] || continue
+
+    op="${line%%[[:space:]]*}"
+    rest="${line#${op}}"
+    rest="$(printf '%s\n' "${rest}" | sed 's/^[[:space:]]*//')"
+
+    case "${op}" in
+        mkdir)
+            target_path="$(seed_target_path "${rest}")"
+            printf '[seed] mkdir %s\n' "${rest}"
+            seed_run mkdir -p "${target_path}"
+            ;;
+        write)
+            path="${rest%%[[:space:]]*}"
+            content="${rest#${path}}"
+            content="$(printf '%s\n' "${content}" | sed 's/^[[:space:]]*//')"
+            target_path="$(seed_target_path "${path}")"
+            printf '[seed] write %s\n' "${path}"
+            if [ "${DRY_RUN}" = "1" ]; then
+                printf '[dry-run] write %s\n' "${target_path}"
+            else
+                mkdir -p "${target_path%/*}"
+                printf '%s\n' "${content}" > "${target_path}"
+            fi
+            ;;
+        append)
+            path="${rest%%[[:space:]]*}"
+            content="${rest#${path}}"
+            content="$(printf '%s\n' "${content}" | sed 's/^[[:space:]]*//')"
+            target_path="$(seed_target_path "${path}")"
+            printf '[seed] append %s\n' "${path}"
+            if [ "${DRY_RUN}" = "1" ]; then
+                printf '[dry-run] append %s\n' "${target_path}"
+            else
+                mkdir -p "${target_path%/*}"
+                printf '%s\n' "${content}" >> "${target_path}"
+            fi
+            ;;
+        touch)
+            target_path="$(seed_target_path "${rest}")"
+            printf '[seed] touch %s\n' "${rest}"
+            if [ "${DRY_RUN}" = "1" ]; then
+                printf '[dry-run] touch %s\n' "${target_path}"
+            else
+                mkdir -p "${target_path%/*}"
+                : > "${target_path}"
+            fi
+            ;;
+        *)
+            printf 'unknown seed operation at line %s: %s\n' "${line_no}" "${op}" >&2
+            exit 1
+            ;;
+    esac
+done < "${SEED_FILE}"
+
+printf '\nSeed complete.\n'

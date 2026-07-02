@@ -44,6 +44,11 @@ doc_file() {
         return 0
     fi
 
+    if [ "${topic}" = "V2.md" ] && [ -n "${REPO_ROOT}" ] && [ -r "${REPO_ROOT}/docs/v2.md" ]; then
+        printf '%s\n' "${REPO_ROOT}/docs/v2.md"
+        return 0
+    fi
+
     return 1
 }
 
@@ -78,6 +83,9 @@ case "${1:-}" in
     pax)
         show_doc "PAX.md"
         ;;
+    v2)
+        show_doc "V2.md"
+        ;;
     first-boot)
         show_doc "FIRST-BOOT.md"
         ;;
@@ -96,7 +104,7 @@ case "${1:-}" in
         ;;
     *)
         printf 'unknown topic: %s\n' "${1}" >&2
-        printf '%s\n' "available topics: install, qemu, commands, packages, docs, pax, first-boot, troubleshooting, changelog, readme" >&2
+        printf '%s\n' "available topics: install, qemu, commands, packages, docs, pax, v2, first-boot, troubleshooting, changelog, readme" >&2
         exit 1
         ;;
 esac
@@ -109,6 +117,7 @@ printf '%s\n' "  praxis-help commands"
 printf '%s\n' "  praxis-help packages"
 printf '%s\n' "  praxis-help docs"
 printf '%s\n' "  praxis-help pax"
+printf '%s\n' "  praxis-help v2"
 printf '%s\n' "  praxis-help first-boot"
 printf '%s\n' "  praxis-help troubleshooting"
 printf '%s\n' "  praxis-help changelog"
@@ -123,4 +132,7 @@ printf '\n'
 printf '%s\n' "tools:"
 printf '%s\n' "  lsblk  blkid  fdisk  parted  mkfs.vfat  mkfs.ext4"
 printf '%s\n' "  preflight  praxis-status  praxis-disk-report"
-printf '%s\n' "  praxis-netcheck  praxis-support  praxis-fetch"
+printf '%s\n' "  praxis-netcheck  praxis-support  praxis-recover"
+printf '%s\n' "  praxis-choice  praxis-contract  praxis-manifest"
+printf '%s\n' "  praxis-provenance"
+printf '%s\n' "  praxis-seed  praxis-fetch"

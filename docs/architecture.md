@@ -21,12 +21,32 @@ install flow, and documentation easy to inspect.
 - `praxis-help` provides a built-in quick-start guide and local doc entrypoint.
 - `praxis-status`, `praxis-preflight`, `praxis-disk-report`, `praxis-netcheck`, and `praxis-support` make the live environment inspectable without leaving the shell.
 - `praxis-install` installs the current Praxis environment onto a mounted target root and writes boot artifacts.
+- `praxis-choice` lists and emits hard system-choice contracts without applying them to a target automatically.
+- `praxis-manifest` lists and verifies base-system manifests without repairing a target.
+- `praxis-seed` applies an explicit seed ledger to a target root without hiding the operations it performs.
 - `praxis-live` prints the live-environment overview and drops you into the shell.
 - `praxis-dev-install` copies the live Praxis environment onto a mounted target root for fast developer installs.
 
 ### Manifests
 
-`config/` separates distro identity, live-tool manifests, and runtime metadata from script logic.
+`config/` separates distro identity, live-tool manifests, base-system manifests,
+and runtime metadata from script logic. Praxis manifests are audit ledgers: they
+describe files, directories, and links the target should contain, but they never
+create or repair them.
+
+### Seeding
+
+Praxis v2 introduces seed ledgers in `config/seeds/`. A seed ledger is not a
+wizard and not a declarative system tree. It is a short ordered list of
+filesystem operations that can be dry-run with `praxis-seed --dry-run <target>`
+before being applied to a mounted target root.
+
+### System Choices
+
+Praxis v2 also introduces choice catalogs in `config/choices/`. Kernel and init
+choices are inspectable with `praxis-choice`, but the command does not apply
+them to a target. It can emit a `system.choice` skeleton so the operator can
+write and edit the contract manually.
 
 ### Kernel Ownership
 

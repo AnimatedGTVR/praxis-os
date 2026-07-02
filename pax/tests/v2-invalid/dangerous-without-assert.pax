@@ -1,0 +1,9 @@
+[.Praxis Config - dangerous without assert v2 .praxis.pax./]
+
+declare Disk main {
+    device = "/dev/vda"
+    table = gpt
+}
+
+write gpt to disk.main
+commit partition table disk.main

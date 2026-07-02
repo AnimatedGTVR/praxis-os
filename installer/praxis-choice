@@ -1,0 +1,397 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+REPO_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/.." 2>/dev/null && pwd || printf '%s\n' "")"
+
+usage() {
+    printf '%s\n' "usage:"
+    printf '%s\n' "  praxis-choice list [kernel|init|desktops|bundles]"
+    printf '%s\n' "  praxis-choice show kernel <name>"
+    printf '%s\n' "  praxis-choice show init <name>"
+    printf '%s\n' "  praxis-choice show desktop <name>"
+    printf '%s\n' "  praxis-choice show bundle <name>"
+    printf '%s\n' "  praxis-choice emit --kernel <name> --init <name> [--desktop <name>] [--bundle <name>] [--packages a,b]"
+    printf '%s\n' "  praxis-choice validate <system.choice>"
+    printf '%s\n' "  praxis-choice boot-entry <system.choice>"
+}
+
+choice_root() {
+    if [ -n "${PRAXIS_CHOICE_ROOT:-}" ] && [ -d "${PRAXIS_CHOICE_ROOT}" ]; then
+        printf '%s\n' "${PRAXIS_CHOICE_ROOT}"
+        return 0
+    fi
+
+    if [ -d "$(praxis_config_root)/choices" ]; then
+        printf '%s\n' "$(praxis_config_root)/choices"
+        return 0
+    fi
+
+    if [ -n "${REPO_ROOT}" ] && [ -d "${REPO_ROOT}/config/choices" ]; then
+        printf '%s\n' "${REPO_ROOT}/config/choices"
+        return 0
+    fi
+
+    return 1
+}
+
+package_root() {
+    if [ -n "${PRAXIS_PACKAGE_ROOT:-}" ] && [ -d "${PRAXIS_PACKAGE_ROOT}" ]; then
+        printf '%s\n' "${PRAXIS_PACKAGE_ROOT}"
+        return 0
+    fi
+
+    if [ -d "$(praxis_config_root)/packages" ]; then
+        printf '%s\n' "$(praxis_config_root)/packages"
+        return 0
+    fi
+
+    if [ -n "${REPO_ROOT}" ] && [ -d "${REPO_ROOT}/config/packages" ]; then
+        printf '%s\n' "${REPO_ROOT}/config/packages"
+        return 0
+    fi
+
+    return 1
+}
+
+list_dir() {
+    dir_path="$1"
+    [ -d "${dir_path}" ] || return 1
+    for file_path in "${dir_path}/"*.conf "${dir_path}/"*.list; do
+        [ -f "${file_path}" ] || continue
+        basename "${file_path}" | sed 's/\.[^.]*$//'
+    done | sort -u
+}
+
+choice_file() {
+    kind="$1"
+    name="$2"
+    root="$(choice_root || true)"
+    [ -n "${root}" ] || return 1
+    file_path="${root}/${kind}/${name}.conf"
+    [ -r "${file_path}" ] || return 1
+    printf '%s\n' "${file_path}"
+}
+
+package_file() {
+    kind="$1"
+    name="$2"
+    root="$(package_root || true)"
+    [ -n "${root}" ] || return 1
+    file_path="${root}/${kind}/${name}.list"
+    [ -r "${file_path}" ] || return 1
+    printf '%s\n' "${file_path}"
+}
+
+show_choice() {
+    kind="$1"
+    name="$2"
+    file_path="$(choice_file "${kind}" "${name}" || true)"
+    [ -n "${file_path}" ] || { printf 'unknown %s choice: %s\n' "${kind}" "${name}" >&2; exit 1; }
+    cat "${file_path}"
+}
+
+read_choice_value() {
+    choice_file_path="$1"
+    choice_key="$2"
+
+    sed -n "s/^${choice_key}=//p" "${choice_file_path}" | sed -n '1p'
+}
+
+validate_absolute_csv() {
+    csv_value="$1"
+    csv_label="$2"
+
+    old_ifs="${IFS}"
+    IFS=','
+    set -- ${csv_value}
+    IFS="${old_ifs}"
+
+    for csv_path in "$@"; do
+        [ -n "${csv_path}" ] || { printf '%s contains an empty path\n' "${csv_label}" >&2; exit 1; }
+        case "${csv_path}" in
+            /*) ;;
+            *) printf '%s path must be absolute: %s\n' "${csv_label}" "${csv_path}" >&2; exit 1 ;;
+        esac
+        case "${csv_path}" in
+            *'/../'*|*/..|'../'*|..)
+                printf '%s path must not contain ..: %s\n' "${csv_label}" "${csv_path}" >&2
+                exit 1
+                ;;
+        esac
+    done
+}
+
+validate_choice_file() {
+    choice_file_path="$1"
+
+    [ -r "${choice_file_path}" ] || { printf 'missing system choice: %s\n' "${choice_file_path}" >&2; exit 1; }
+
+    kernel_name="$(read_choice_value "${choice_file_path}" KERNEL_PROFILE)"
+    kernel_artifact="$(read_choice_value "${choice_file_path}" KERNEL_ARTIFACT)"
+    kernel_fragment="$(read_choice_value "${choice_file_path}" KERNEL_CONFIG_FRAGMENT)"
+    init_name="$(read_choice_value "${choice_file_path}" INIT_CHOICE)"
+    rdinit_value="$(read_choice_value "${choice_file_path}" INIT_RDINIT)"
+    init_required_files="$(read_choice_value "${choice_file_path}" INIT_REQUIRED_FILES)"
+    init_required_dirs="$(read_choice_value "${choice_file_path}" INIT_REQUIRED_DIRS)"
+    desktop_name="$(read_choice_value "${choice_file_path}" DESKTOP_PROFILE)"
+    bundle_names="$(read_choice_value "${choice_file_path}" PACKAGE_BUNDLES)"
+
+    [ -n "${kernel_name}" ] || { printf 'system.choice missing KERNEL_PROFILE\n' >&2; exit 1; }
+    [ -n "${kernel_artifact}" ] || { printf 'system.choice missing KERNEL_ARTIFACT\n' >&2; exit 1; }
+    [ -n "${kernel_fragment}" ] || { printf 'system.choice missing KERNEL_CONFIG_FRAGMENT\n' >&2; exit 1; }
+    [ -n "${init_name}" ] || { printf 'system.choice missing INIT_CHOICE\n' >&2; exit 1; }
+    [ -n "${rdinit_value}" ] || { printf 'system.choice missing INIT_RDINIT\n' >&2; exit 1; }
+    [ -n "${init_required_files}" ] || { printf 'system.choice missing INIT_REQUIRED_FILES\n' >&2; exit 1; }
+    [ -n "${init_required_dirs}" ] || { printf 'system.choice missing INIT_REQUIRED_DIRS\n' >&2; exit 1; }
+
+    kernel_file="$(choice_file kernel "${kernel_name}" || true)"
+    init_file="$(choice_file init "${init_name}" || true)"
+    [ -n "${kernel_file}" ] || { printf 'unknown kernel profile in system.choice: %s\n' "${kernel_name}" >&2; exit 1; }
+    [ -n "${init_file}" ] || { printf 'unknown init choice in system.choice: %s\n' "${init_name}" >&2; exit 1; }
+
+    case "${kernel_artifact}" in
+        /*) ;;
+        *) printf 'KERNEL_ARTIFACT must be absolute: %s\n' "${kernel_artifact}" >&2; exit 1 ;;
+    esac
+
+    case "${kernel_fragment}" in
+        /*) ;;
+        *) printf 'KERNEL_CONFIG_FRAGMENT must be absolute: %s\n' "${kernel_fragment}" >&2; exit 1 ;;
+    esac
+
+    validate_absolute_csv "${init_required_files}" INIT_REQUIRED_FILES
+    validate_absolute_csv "${init_required_dirs}" INIT_REQUIRED_DIRS
+
+    expected_rdinit="$(sed -n 's/^RDINIT=//p' "${init_file}" | sed -n '1p')"
+    expected_init_required_files="$(sed -n 's/^REQUIRED_FILES=//p' "${init_file}" | sed -n '1p')"
+    expected_init_required_dirs="$(sed -n 's/^REQUIRED_DIRS=//p' "${init_file}" | sed -n '1p')"
+    expected_artifact="$(sed -n 's/^ARTIFACT=//p' "${kernel_file}" | sed -n '1p')"
+    expected_fragment="$(sed -n 's/^CONFIG_FRAGMENT=//p' "${kernel_file}" | sed -n '1p')"
+    if [ "${kernel_artifact}" != "${expected_artifact}" ]; then
+        printf 'KERNEL_ARTIFACT mismatch: got %s, expected %s\n' "${kernel_artifact}" "${expected_artifact}" >&2
+        exit 1
+    fi
+
+    if [ "${kernel_fragment}" != "${expected_fragment}" ]; then
+        printf 'KERNEL_CONFIG_FRAGMENT mismatch: got %s, expected %s\n' "${kernel_fragment}" "${expected_fragment}" >&2
+        exit 1
+    fi
+
+    if [ "${rdinit_value}" != "${expected_rdinit}" ]; then
+        printf 'INIT_RDINIT mismatch: got %s, expected %s\n' "${rdinit_value}" "${expected_rdinit}" >&2
+        exit 1
+    fi
+
+    if [ "${init_required_files}" != "${expected_init_required_files}" ]; then
+        printf 'INIT_REQUIRED_FILES mismatch: got %s, expected %s\n' "${init_required_files}" "${expected_init_required_files}" >&2
+        exit 1
+    fi
+
+    if [ "${init_required_dirs}" != "${expected_init_required_dirs}" ]; then
+        printf 'INIT_REQUIRED_DIRS mismatch: got %s, expected %s\n' "${init_required_dirs}" "${expected_init_required_dirs}" >&2
+        exit 1
+    fi
+
+    if [ -n "${desktop_name}" ] && [ "${desktop_name}" != "none" ]; then
+        package_file desktops "${desktop_name}" >/dev/null || { printf 'unknown desktop profile in system.choice: %s\n' "${desktop_name}" >&2; exit 1; }
+    fi
+
+    if [ -n "${bundle_names}" ] && [ "${bundle_names}" != "none" ]; then
+        old_ifs="${IFS}"
+        IFS=','
+        set -- ${bundle_names}
+        IFS="${old_ifs}"
+        for bundle_name in "$@"; do
+            [ -n "${bundle_name}" ] || continue
+            package_file bundles "${bundle_name}" >/dev/null || { printf 'unknown bundle in system.choice: %s\n' "${bundle_name}" >&2; exit 1; }
+        done
+    fi
+}
+
+ACTION="${1:-list}"
+
+case "${ACTION}" in
+    list)
+        topic="${2:-all}"
+        choices="$(choice_root || true)"
+        packages="$(package_root || true)"
+        case "${topic}" in
+            all)
+                printf '%s\n' "Kernel profiles:"
+                list_dir "${choices}/kernel" | sed 's/^/  - /'
+                printf '\n%s\n' "Init choices:"
+                list_dir "${choices}/init" | sed 's/^/  - /'
+                printf '\n%s\n' "Desktop profiles:"
+                list_dir "${packages}/desktops" | sed 's/^/  - /'
+                printf '\n%s\n' "Package bundles:"
+                list_dir "${packages}/bundles" | sed 's/^/  - /'
+                ;;
+            kernel|init)
+                list_dir "${choices}/${topic}" | sed 's/^/  - /'
+                ;;
+            desktops|bundles)
+                list_dir "${packages}/${topic}" | sed 's/^/  - /'
+                ;;
+            *)
+                usage >&2
+                exit 1
+                ;;
+        esac
+        ;;
+    show)
+        kind="${2:-}"
+        name="${3:-}"
+        case "${kind}" in
+            kernel|init)
+                show_choice "${kind}" "${name}"
+                ;;
+            desktop)
+                file_path="$(package_file desktops "${name}" || true)"
+                [ -n "${file_path}" ] || { printf 'unknown desktop profile: %s\n' "${name}" >&2; exit 1; }
+                cat "${file_path}"
+                ;;
+            bundle)
+                file_path="$(package_file bundles "${name}" || true)"
+                [ -n "${file_path}" ] || { printf 'unknown bundle: %s\n' "${name}" >&2; exit 1; }
+                cat "${file_path}"
+                ;;
+            *)
+                usage >&2
+                exit 1
+                ;;
+        esac
+        ;;
+    emit)
+        shift
+        kernel_name=""
+        init_name=""
+        desktop_name="none"
+        bundle_names=""
+        package_names=""
+
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --kernel)
+                    shift
+                    kernel_name="${1:-}"
+                    ;;
+                --init)
+                    shift
+                    init_name="${1:-}"
+                    ;;
+                --desktop)
+                    shift
+                    desktop_name="${1:-}"
+                    ;;
+                --bundle)
+                    shift
+                    if [ -n "${bundle_names}" ]; then
+                        bundle_names="${bundle_names},$1"
+                    else
+                        bundle_names="$1"
+                    fi
+                    ;;
+                --packages)
+                    shift
+                    package_names="${1:-}"
+                    ;;
+                -h|--help)
+                    usage
+                    exit 0
+                    ;;
+                *)
+                    usage >&2
+                    exit 1
+                    ;;
+            esac
+            shift
+        done
+
+        [ -n "${kernel_name}" ] || { printf 'kernel choice required\n' >&2; exit 1; }
+        [ -n "${init_name}" ] || { printf 'init choice required\n' >&2; exit 1; }
+
+        kernel_file="$(choice_file kernel "${kernel_name}" || true)"
+        init_file="$(choice_file init "${init_name}" || true)"
+        [ -n "${kernel_file}" ] || { printf 'unknown kernel profile: %s\n' "${kernel_name}" >&2; exit 1; }
+        [ -n "${init_file}" ] || { printf 'unknown init choice: %s\n' "${init_name}" >&2; exit 1; }
+
+        if [ "${desktop_name}" != "none" ]; then
+            package_file desktops "${desktop_name}" >/dev/null || { printf 'unknown desktop profile: %s\n' "${desktop_name}" >&2; exit 1; }
+        fi
+
+        if [ -n "${bundle_names}" ]; then
+            old_ifs="${IFS}"
+            IFS=','
+            set -- ${bundle_names}
+            IFS="${old_ifs}"
+            for bundle_name in "$@"; do
+                [ -n "${bundle_name}" ] || continue
+                package_file bundles "${bundle_name}" >/dev/null || { printf 'unknown bundle: %s\n' "${bundle_name}" >&2; exit 1; }
+            done
+        fi
+
+        rdinit="$(sed -n 's/^RDINIT=//p' "${init_file}" | sed -n '1p')"
+        init_required_files="$(sed -n 's/^REQUIRED_FILES=//p' "${init_file}" | sed -n '1p')"
+        init_required_dirs="$(sed -n 's/^REQUIRED_DIRS=//p' "${init_file}" | sed -n '1p')"
+        artifact="$(sed -n 's/^ARTIFACT=//p' "${kernel_file}" | sed -n '1p')"
+        fragment="$(sed -n 's/^CONFIG_FRAGMENT=//p' "${kernel_file}" | sed -n '1p')"
+
+        cat <<EOF
+KERNEL_PROFILE=${kernel_name}
+KERNEL_ARTIFACT=${artifact}
+KERNEL_CONFIG_FRAGMENT=${fragment}
+INIT_CHOICE=${init_name}
+INIT_RDINIT=${rdinit}
+INIT_REQUIRED_FILES=${init_required_files}
+INIT_REQUIRED_DIRS=${init_required_dirs}
+DESKTOP_PROFILE=${desktop_name}
+PACKAGE_BUNDLES=${bundle_names}
+EXTRA_PACKAGES=${package_names}
+EOF
+        ;;
+    validate)
+        choice_path="${2:-}"
+        [ -n "${choice_path}" ] || { usage >&2; exit 1; }
+        validate_choice_file "${choice_path}"
+        printf 'system.choice valid: %s\n' "${choice_path}"
+        ;;
+    boot-entry)
+        choice_path="${2:-}"
+        [ -n "${choice_path}" ] || { usage >&2; exit 1; }
+        validate_choice_file "${choice_path}"
+        rdinit="$(read_choice_value "${choice_path}" INIT_RDINIT)"
+        cat <<EOF
+title   Praxis
+linux   /praxis/vmlinuz
+initrd  /praxis/initramfs.cpio.gz
+options root=UUID=<root-uuid> rdinit=${rdinit} praxis.live=0 loglevel=3
+EOF
+        ;;
+    -h|--help)
+        usage
+        ;;
+    *)
+        usage >&2
+        exit 1
+        ;;
+esac

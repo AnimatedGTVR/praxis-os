@@ -11,6 +11,7 @@ praxis-status
 praxis-disk-report
 praxis-netcheck
 praxis-support
+praxis-recover /mnt/praxis
 ```
 
 ## Common Install Problems
@@ -30,12 +31,60 @@ everything in one step.
 
 ```bash
 targetcheck /mnt/praxis
+praxis-recover /mnt/praxis
 ```
 
 That checks the kernel, initramfs, initramfs policy, Limine config, loader
 entry, hostname, UUID fstab, root UUID consistency, localtime, locale.conf,
-machine-id, boot options, and install metadata. Read the output line by line
-and fix whatever shows as missing or wrong.
+machine-id, boot options, install metadata, and `system.choice` when present.
+Read the output line by line and fix whatever shows as missing or wrong.
+
+For the full v2 contract audit:
+
+```bash
+targetcheck --strict /mnt/praxis
+```
+
+Strict mode requires `system.choice`, build provenance, rootfs checksums,
+base-system manifest verification, `packages.selected`, and zero warnings.
+
+To compare a target against an exported contract:
+
+```bash
+praxis-contract inspect praxis.contract
+praxis-contract verify praxis.contract /mnt/praxis
+```
+
+Contract verification reports mismatched or missing files. It does not restore
+them.
+
+If `system.choice` fails, inspect it directly:
+
+```bash
+cat /mnt/praxis/etc/praxis/system.choice
+praxis-choice validate /mnt/praxis/etc/praxis/system.choice
+praxis-choice boot-entry /mnt/praxis/etc/praxis/system.choice
+```
+
+If the selected init fails, compare the profile against the target:
+
+```bash
+praxis-choice show init s6
+targetcheck /mnt/praxis
+```
+
+The profile's `REQUIRED_FILES` and `REQUIRED_DIRS` are binding. Praxis reports
+missing paths; it does not create an s6 or systemd tree for you.
+
+If a seed produced unexpected files, inspect the ledger instead of guessing:
+
+```bash
+praxis-seed list
+praxis-seed show recovery
+```
+
+`praxis-recover` is inspect-only. It prints a manual recovery ledger, but it
+does not repair the target for you.
 
 ### Package or Desktop Install Fails
 

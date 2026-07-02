@@ -21,11 +21,13 @@ else
     . "${SCRIPT_DIR}/lib/common.sh"
 fi
 
-TARGET_ROOT="${1:-}"
+STRICT_MODE=0
+TARGET_ROOT=""
 
 usage() {
-    printf '%s\n' "usage: targetcheck <target-root>"
+    printf '%s\n' "usage: targetcheck [--strict] <target-root>"
     printf '%s\n' "example: targetcheck /mnt/praxis"
+    printf '%s\n' "example: targetcheck --strict /mnt/praxis"
 }
 
 print_field() {
@@ -42,6 +44,28 @@ read_meta_value() {
 
     sed -n "s/^${META_KEY}=//p" "${META_FILE}" | sed -n '1p'
 }
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --strict)
+            STRICT_MODE=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -*)
+            usage >&2
+            exit 1
+            ;;
+        *)
+            [ -z "${TARGET_ROOT}" ] || { usage >&2; exit 1; }
+            TARGET_ROOT="$1"
+            shift
+            ;;
+    esac
+done
 
 if [ -z "${TARGET_ROOT}" ]; then
     usage >&2
@@ -70,6 +94,24 @@ TARGET_HOSTNAME="unknown"
 INSTALL_DESKTOP="none"
 INSTALL_BUNDLES="none"
 INSTALL_PACKAGES="none"
+CHOICE_FILE="${TARGET_ROOT}/etc/praxis/system.choice"
+CHOICE_STATUS="missing"
+CHOICE_KERNEL="unknown"
+CHOICE_ARTIFACT="unknown"
+CHOICE_FRAGMENT="unknown"
+CHOICE_INIT="unknown"
+CHOICE_RDINIT="unknown"
+CHOICE_INIT_FILES="unknown"
+CHOICE_INIT_DIRS="unknown"
+CHOICE_DESKTOP="none"
+CHOICE_BUNDLES="none"
+CHOICE_PACKAGES="none"
+CHOICE_VALIDATION="unknown"
+PACKAGES_SELECTED_FILE="${TARGET_ROOT}/etc/praxis/packages.selected"
+SELECTED_DESKTOP="unknown"
+SELECTED_BUNDLES="unknown"
+SELECTED_EXTRA="unknown"
+SELECTED_INSTALLED="unknown"
 HOSTS_STATUS="missing"
 ENTRY_FILE=""
 EXPECTED_ENTRY_FILE=""
@@ -147,6 +189,56 @@ if [ -r "${TARGET_ROOT}/etc/praxis/install" ]; then
     [ -n "${INSTALL_COMPLETE}" ] || INSTALL_COMPLETE="unknown"
 fi
 
+if [ -r "${CHOICE_FILE}" ]; then
+    CHOICE_STATUS="present"
+    CHOICE_KERNEL="$(read_meta_value "${CHOICE_FILE}" KERNEL_PROFILE || true)"
+    [ -n "${CHOICE_KERNEL}" ] || CHOICE_KERNEL="missing"
+    CHOICE_ARTIFACT="$(read_meta_value "${CHOICE_FILE}" KERNEL_ARTIFACT || true)"
+    [ -n "${CHOICE_ARTIFACT}" ] || CHOICE_ARTIFACT="missing"
+    CHOICE_FRAGMENT="$(read_meta_value "${CHOICE_FILE}" KERNEL_CONFIG_FRAGMENT || true)"
+    [ -n "${CHOICE_FRAGMENT}" ] || CHOICE_FRAGMENT="missing"
+    CHOICE_INIT="$(read_meta_value "${CHOICE_FILE}" INIT_CHOICE || true)"
+    [ -n "${CHOICE_INIT}" ] || CHOICE_INIT="missing"
+    CHOICE_RDINIT="$(read_meta_value "${CHOICE_FILE}" INIT_RDINIT || true)"
+    [ -n "${CHOICE_RDINIT}" ] || CHOICE_RDINIT="missing"
+    CHOICE_INIT_FILES="$(read_meta_value "${CHOICE_FILE}" INIT_REQUIRED_FILES || true)"
+    [ -n "${CHOICE_INIT_FILES}" ] || CHOICE_INIT_FILES="missing"
+    CHOICE_INIT_DIRS="$(read_meta_value "${CHOICE_FILE}" INIT_REQUIRED_DIRS || true)"
+    [ -n "${CHOICE_INIT_DIRS}" ] || CHOICE_INIT_DIRS="missing"
+    CHOICE_DESKTOP="$(read_meta_value "${CHOICE_FILE}" DESKTOP_PROFILE || true)"
+    [ -n "${CHOICE_DESKTOP}" ] || CHOICE_DESKTOP="none"
+    CHOICE_BUNDLES="$(read_meta_value "${CHOICE_FILE}" PACKAGE_BUNDLES || true)"
+    [ -n "${CHOICE_BUNDLES}" ] || CHOICE_BUNDLES="none"
+    CHOICE_PACKAGES="$(read_meta_value "${CHOICE_FILE}" EXTRA_PACKAGES || true)"
+    [ -n "${CHOICE_PACKAGES}" ] || CHOICE_PACKAGES="none"
+    if command -v praxis-choice >/dev/null 2>&1; then
+        if PRAXIS_CONFIG_ROOT="${TARGET_ROOT}/etc/praxis" praxis-choice validate "${CHOICE_FILE}" >/dev/null 2>&1; then
+            CHOICE_VALIDATION="valid"
+        else
+            CHOICE_VALIDATION="invalid"
+        fi
+    elif [ -x "${SCRIPT_DIR}/praxis-choice" ]; then
+        if PRAXIS_CONFIG_ROOT="${TARGET_ROOT}/etc/praxis" "${SCRIPT_DIR}/praxis-choice" validate "${CHOICE_FILE}" >/dev/null 2>&1; then
+            CHOICE_VALIDATION="valid"
+        else
+            CHOICE_VALIDATION="invalid"
+        fi
+    else
+        CHOICE_VALIDATION="unchecked"
+    fi
+fi
+
+if [ -r "${PACKAGES_SELECTED_FILE}" ]; then
+    SELECTED_DESKTOP="$(read_meta_value "${PACKAGES_SELECTED_FILE}" DESKTOP || true)"
+    [ -n "${SELECTED_DESKTOP}" ] || SELECTED_DESKTOP="unknown"
+    SELECTED_BUNDLES="$(read_meta_value "${PACKAGES_SELECTED_FILE}" BUNDLES || true)"
+    [ -n "${SELECTED_BUNDLES}" ] || SELECTED_BUNDLES="unknown"
+    SELECTED_EXTRA="$(read_meta_value "${PACKAGES_SELECTED_FILE}" EXTRA || true)"
+    [ -n "${SELECTED_EXTRA}" ] || SELECTED_EXTRA="unknown"
+    SELECTED_INSTALLED="$(read_meta_value "${PACKAGES_SELECTED_FILE}" INSTALLED || true)"
+    [ -n "${SELECTED_INSTALLED}" ] || SELECTED_INSTALLED="unknown"
+fi
+
 if [ ! -r "${TARGET_ROOT}/etc/praxis/install" ] && { [ -f "${TARGET_ROOT}/boot/praxis/vmlinuz" ] || [ -f "${TARGET_ROOT}/boot/praxis/initramfs.cpio.gz" ]; }; then
     PARTIAL_INSTALL=1
 fi
@@ -201,6 +293,7 @@ fi
 
 praxis_header "targetcheck"
 print_field "Target" "${TARGET_ROOT}"
+print_field "Strict mode" "${STRICT_MODE}"
 print_field "Root mounted" "${ROOT_MOUNTED}"
 print_field "Boot mounted" "${BOOT_MOUNTED}"
 print_field "Root fs" "${ROOT_FSTYPE}"
@@ -216,6 +309,17 @@ print_field "Bootctl installed" "${SYSTEMD_BOOT_INSTALLED}"
 print_field "Limine config" "${LIMINE_CONFIG}"
 print_field "Limine UEFI" "${LIMINE_UEFI}"
 print_field "Install complete" "${INSTALL_COMPLETE}"
+print_field "System choice" "${CHOICE_STATUS}"
+print_field "Choice kernel" "${CHOICE_KERNEL}"
+print_field "Choice artifact" "${CHOICE_ARTIFACT}"
+print_field "Choice fragment" "${CHOICE_FRAGMENT}"
+print_field "Choice init" "${CHOICE_INIT}"
+print_field "Choice rdinit" "${CHOICE_RDINIT}"
+print_field "Choice init files" "${CHOICE_INIT_FILES}"
+print_field "Choice init dirs" "${CHOICE_INIT_DIRS}"
+print_field "Choice desktop" "${CHOICE_DESKTOP}"
+print_field "Choice bundles" "${CHOICE_BUNDLES}"
+print_field "Choice valid" "${CHOICE_VALIDATION}"
 
 if [ -f "${TARGET_ROOT}/boot/praxis/vmlinuz" ]; then
     print_field "Kernel" "present"
@@ -283,9 +387,201 @@ else
 fi
 
 case "${ENTRY_OPTIONS}" in
-    *"rdinit=/init"*) print_field "Entry rdinit" "present" ;;
+    *"rdinit="*) print_field "Entry rdinit" "present" ;;
     *) print_field "Entry rdinit" "missing"; STATUS=1 ;;
 esac
+
+if [ "${CHOICE_STATUS}" = "present" ]; then
+    if [ "${CHOICE_VALIDATION}" = "invalid" ]; then
+        print_field "Choice catalog" "invalid"
+        STATUS=1
+    elif [ "${CHOICE_VALIDATION}" = "valid" ]; then
+        print_field "Choice catalog" "valid"
+    else
+        print_field "Choice catalog" "${CHOICE_VALIDATION}"
+        WARNINGS=$((WARNINGS + 1))
+    fi
+
+    case "${CHOICE_KERNEL}" in
+        missing|unknown)
+            print_field "Choice kernel ok" "no"
+            STATUS=1
+            ;;
+        *)
+            print_field "Choice kernel ok" "yes"
+            ;;
+    esac
+
+    case "${CHOICE_ARTIFACT}" in
+        missing|unknown)
+            print_field "Choice artifact ok" "no"
+            STATUS=1
+            ;;
+        /*)
+            if [ -f "${TARGET_ROOT}${CHOICE_ARTIFACT}" ]; then
+                print_field "Choice artifact ok" "present"
+            else
+                print_field "Choice artifact ok" "missing: ${CHOICE_ARTIFACT}"
+                STATUS=1
+            fi
+            ;;
+        *)
+            print_field "Choice artifact ok" "not absolute"
+            STATUS=1
+            ;;
+    esac
+
+    case "${CHOICE_FRAGMENT}" in
+        missing|unknown)
+            print_field "Choice fragment ok" "no"
+            STATUS=1
+            ;;
+        /*)
+            if [ -f "${TARGET_ROOT}${CHOICE_FRAGMENT}" ]; then
+                print_field "Choice fragment ok" "present"
+            else
+                print_field "Choice fragment ok" "missing: ${CHOICE_FRAGMENT}"
+                STATUS=1
+            fi
+            ;;
+        *)
+            print_field "Choice fragment ok" "not absolute"
+            STATUS=1
+            ;;
+    esac
+
+    case "${CHOICE_INIT}" in
+        missing|unknown)
+            print_field "Choice init ok" "no"
+            STATUS=1
+            ;;
+        *)
+            print_field "Choice init ok" "yes"
+            ;;
+    esac
+
+    case "${CHOICE_RDINIT}" in
+        missing|unknown)
+            print_field "Choice rdinit ok" "no"
+            STATUS=1
+            ;;
+        *)
+            print_field "Choice rdinit ok" "yes"
+            if [ -e "${TARGET_ROOT}${CHOICE_RDINIT}" ]; then
+                print_field "Choice init path" "present"
+            else
+                print_field "Choice init path" "missing: ${CHOICE_RDINIT}"
+                STATUS=1
+            fi
+            case "${ENTRY_OPTIONS}" in
+                *"rdinit=${CHOICE_RDINIT}"*) print_field "Choice rdinit match" "yes" ;;
+                *) print_field "Choice rdinit match" "no"; STATUS=1 ;;
+            esac
+            ;;
+    esac
+
+    case "${CHOICE_INIT_FILES}" in
+        missing|unknown)
+            print_field "Choice init files ok" "no"
+            STATUS=1
+            ;;
+        *)
+            old_ifs="${IFS}"
+            IFS=','
+            set -- ${CHOICE_INIT_FILES}
+            IFS="${old_ifs}"
+            for init_file_path in "$@"; do
+                [ -n "${init_file_path}" ] || continue
+                case "${init_file_path}" in
+                    /*)
+                        if [ -f "${TARGET_ROOT}${init_file_path}" ]; then
+                            print_field "Init file" "present: ${init_file_path}"
+                        else
+                            print_field "Init file" "missing: ${init_file_path}"
+                            STATUS=1
+                        fi
+                        ;;
+                    *)
+                        print_field "Init file" "not absolute: ${init_file_path}"
+                        STATUS=1
+                        ;;
+                esac
+            done
+            ;;
+    esac
+
+    case "${CHOICE_INIT_DIRS}" in
+        missing|unknown)
+            print_field "Choice init dirs ok" "no"
+            STATUS=1
+            ;;
+        *)
+            old_ifs="${IFS}"
+            IFS=','
+            set -- ${CHOICE_INIT_DIRS}
+            IFS="${old_ifs}"
+            for init_dir_path in "$@"; do
+                [ -n "${init_dir_path}" ] || continue
+                case "${init_dir_path}" in
+                    /*)
+                        if [ -d "${TARGET_ROOT}${init_dir_path}" ]; then
+                            print_field "Init dir" "present: ${init_dir_path}"
+                        else
+                            print_field "Init dir" "missing: ${init_dir_path}"
+                            STATUS=1
+                        fi
+                        ;;
+                    *)
+                        print_field "Init dir" "not absolute: ${init_dir_path}"
+                        STATUS=1
+                        ;;
+                esac
+            done
+            ;;
+    esac
+
+    if [ "${CHOICE_DESKTOP}" != "none" ]; then
+        if [ "${SELECTED_DESKTOP}" = "${CHOICE_DESKTOP}" ]; then
+            print_field "Choice desktop match" "yes"
+        else
+            print_field "Choice desktop match" "no: ${SELECTED_DESKTOP}"
+            STATUS=1
+        fi
+    else
+        print_field "Choice desktop match" "none"
+    fi
+
+    if [ "${CHOICE_BUNDLES}" != "none" ]; then
+        if [ ! -r "${PACKAGES_SELECTED_FILE}" ]; then
+            print_field "Choice bundles match" "missing packages.selected"
+            STATUS=1
+        elif [ "${SELECTED_BUNDLES}" = "${CHOICE_BUNDLES}" ]; then
+            print_field "Choice bundles match" "yes"
+        else
+            print_field "Choice bundles match" "no: ${SELECTED_BUNDLES}"
+            STATUS=1
+        fi
+    else
+        print_field "Choice bundles match" "none"
+    fi
+
+    if [ "${CHOICE_PACKAGES}" != "none" ]; then
+        if [ ! -r "${PACKAGES_SELECTED_FILE}" ]; then
+            print_field "Choice extra match" "missing packages.selected"
+            STATUS=1
+        elif [ "${SELECTED_EXTRA}" = "${CHOICE_PACKAGES}" ]; then
+            print_field "Choice extra match" "yes"
+        else
+            print_field "Choice extra match" "no: ${SELECTED_EXTRA}"
+            STATUS=1
+        fi
+    else
+        print_field "Choice extra match" "none"
+    fi
+else
+    print_field "System choice" "optional but recommended"
+    WARNINGS=$((WARNINGS + 1))
+fi
 
 case "${ENTRY_OPTIONS}" in
     *"praxis.live=0"*) print_field "Entry live mode" "installed" ;;
@@ -419,6 +715,67 @@ if [ -f "${TARGET_ROOT}/boot/EFI/BOOT/BOOTX64.EFI" ] || [ -f "${TARGET_ROOT}/boo
 else
     print_field "Bootloader EFI" "missing"
     STATUS=1
+fi
+
+if [ "${STRICT_MODE}" = "1" ]; then
+    if [ "${CHOICE_STATUS}" = "present" ]; then
+        print_field "Strict choice" "present"
+    else
+        print_field "Strict choice" "missing"
+        STATUS=1
+    fi
+
+    if [ -r "${TARGET_ROOT}/etc/praxis/build-info" ]; then
+        print_field "Strict build-info" "present"
+    else
+        print_field "Strict build-info" "missing"
+        STATUS=1
+    fi
+
+    if [ -r "${TARGET_ROOT}/etc/praxis/rootfs.sha256" ]; then
+        print_field "Strict rootfs sha" "present"
+    else
+        print_field "Strict rootfs sha" "missing"
+        STATUS=1
+    fi
+
+    if [ -x "${SCRIPT_DIR}/praxis-provenance" ]; then
+        if PRAXIS_LIB_ROOT="${PRAXIS_LIB_ROOT:-${SCRIPT_DIR}/lib}" "${SCRIPT_DIR}/praxis-provenance" verify "${TARGET_ROOT}" >/dev/null 2>&1; then
+            print_field "Strict provenance" "valid"
+        else
+            print_field "Strict provenance" "invalid"
+            STATUS=1
+        fi
+    else
+        print_field "Strict provenance" "unchecked"
+        STATUS=1
+    fi
+
+    if [ -x "${SCRIPT_DIR}/praxis-manifest" ]; then
+        if PRAXIS_LIB_ROOT="${PRAXIS_LIB_ROOT:-${SCRIPT_DIR}/lib}" PRAXIS_CONFIG_ROOT="${TARGET_ROOT}/etc/praxis" "${SCRIPT_DIR}/praxis-manifest" verify base-system "${TARGET_ROOT}" >/dev/null 2>&1; then
+            print_field "Strict manifest" "valid"
+        else
+            print_field "Strict manifest" "invalid"
+            STATUS=1
+        fi
+    else
+        print_field "Strict manifest" "unchecked"
+        STATUS=1
+    fi
+
+    if [ -r "${PACKAGES_SELECTED_FILE}" ]; then
+        print_field "Strict packages" "present"
+    else
+        print_field "Strict packages" "missing"
+        STATUS=1
+    fi
+
+    if [ "${WARNINGS}" = "0" ]; then
+        print_field "Strict warnings" "none"
+    else
+        print_field "Strict warnings" "${WARNINGS}"
+        STATUS=1
+    fi
 fi
 
 printf '\n'

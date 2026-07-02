@@ -1,16 +1,23 @@
-[.Praxis Config - workstation-config profile .praxis.pax./]
+[.Praxis Config - workstation profile v2 .praxis.pax./]
 
-# Bundle together a desktop and a small workstation software set.
-# Package identifiers use reverse-domain notation: tld.org.name
+# A workstation profile in PAX v2 form.
+# Declarations are not needed here because this profile only installs packages
+# and a desktop.
 
-install package org.mozilla.firefox
-install package dev.praxis.neovim
-install package org.videolan.vlc
-install package dev.praxis.kitty
-enable desktop plasma
+let Desktop desktop = plasma
+let List<Package> workstation_packages = [
+    pkg org.mozilla.firefox,
+    pkg dev.praxis.neovim,
+    pkg org.videolan.vlc,
+    pkg dev.praxis.kitty
+]
 
-# Report when the profile has finished applying.
-if install.status == finished
-{
-    print "Workstation profile applied."
+for pkg in workstation_packages {
+    install package pkg
+    assert state.package.last_install == pkg "workstation package install did not land"
 }
+
+install desktop desktop
+assert state.desktop.current == desktop "desktop did not install"
+
+log "Workstation profile applied."
