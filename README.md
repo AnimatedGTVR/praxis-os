@@ -1,3 +1,22 @@
+
+
+
+> [!WARNING]
+> **Praxis is back.**
+>
+> After rethinking my decision to archive Praxis, I've decided to bring the project back with a new vision.
+>
+> Instead of pursuing its previous direction, Praxis is being rebuilt as a lightweight, minimal Linux distribution inspired by the philosophy of Alpine Linux while maintaining its own identity and goals.
+>
+> Praxis is currently **experimental** and **not ready for production use**. It may contain incomplete features, bugs, installation failures, boot issues, or data loss risks. Interfaces, commands, package formats, and installation procedures may change between releases without notice.
+>
+> Praxis is designed for experienced Linux users who want complete control over their system. If you're looking for an automated installer or a beginner-friendly distribution, Praxis is probably not the right choice.
+>
+> **Use at your own risk, and never install Praxis on hardware containing important data without verified backups.**
+
+
+
+
 # Praxis
 
 Praxis is a minimal Linux distro where you control the system.
