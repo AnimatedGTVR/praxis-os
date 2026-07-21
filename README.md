@@ -1,6 +1,3 @@
-
-
-
 > [!WARNING]
 > **Praxis is back.**
 >
@@ -13,9 +10,6 @@
 > Praxis is designed for experienced Linux users who want complete control over their system. If you're looking for an automated installer or a beginner-friendly distribution, Praxis is probably not the right choice.
 >
 > **Use at your own risk, and never install Praxis on hardware containing important data without verified backups.**
-
-
-
 
 # Praxis
 
@@ -38,42 +32,58 @@ initramfs, chroot configuration, boot entry — each step is yours.
 Praxis is not for beginners. The live ISO gives you tools, catalogs, and docs.
 It does not try to hide the machine from you.
 
-## Current Status
+## What's Real Right Now
 
-This repository is now an early first-version scaffold:
+- a Praxis-owned kernel (`make kernel`, profile-selectable: stock, tiny,
+  hardened) and a Praxis-owned static BusyBox userspace (`make userspace`)
+- a runit-style supervise tree for PID 1: `boot/init` mounts pseudo
+  filesystems, handles the initramfs-to-installed-root switch, then hands off
+  to BusyBox `runsvdir` over `/etc/service`. Service definitions live in
+  `/etc/sv/<name>/`; `/etc/service/<name>` is a symlink present only when
+  enabled. `praxis-sv list`/`status`/`enable`/`disable` manages that
+- `s6` as a second, genuinely working init choice — `make s6` builds
+  statically-linked skalibs/execline/s6 from source, `PRAXIS_ENABLE_S6=1`
+  stages it opt-in. `systemd` is still listed in the init catalog but nothing
+  builds it; choosing it is expected to fail
+- `praxis-pkg`: a native `.prx` binary package format (reverse-domain IDs,
+  gzip-tar archives, tab-delimited repo indexes) with real dependency
+  resolution on install and real file removal on uninstall. It's a small
+  companion tool for Praxis's own packages, not a replacement for the
+  pacman-driven desktop/bundle path — see `docs/pkg-format.md`
+- hard choice catalogs (`praxis-choice`), seed ledgers (`praxis-seed`),
+  base-system manifests (`praxis-manifest`), build provenance
+  (`praxis-provenance`), portable contracts (`praxis-contract`), and a manual
+  recovery ledger (`praxis-recover`)
+- `make iso` is actually reproducible under `SOURCE_DATE_EPOCH` — two builds
+  from the same inputs produce a byte-identical ISO, verified by
+  `make check-reproducible`
+- a live toolkit (`praxis-status`, `praxis-disk-report`, `praxis-netcheck`,
+  `praxis-support`, `praxis-fetch`) and local docs from `praxis-help`
+- a layered check suite (`make check`, `make v1-check`, `make v2-check`, and
+  the individual `check-*` targets) that's exercised against real QEMU boots,
+  not just static checks
 
-- boot and initramfs layout
-- rootfs staging with a bundled live userspace
-- live environment drops to a raw shell with local docs and install tooling
-- explicit staged install: rootfs deploy, fstab, initramfs, chroot, boot entries
-- Praxis shell branding with a system-wide Fastfetch profile and ASCII art
-- built-in live toolkit for status, preflight, disk, network, and support reporting
-- local documentation available from `praxis-help`
-- hard choice catalogs via `praxis-choice`
-- auditable base-system manifests via `praxis-manifest`
-- build provenance and checksum ledgers via `praxis-provenance`
-- explicit seed ledgers via `praxis-seed`
-- ISO and QEMU workflows
-- build and sanity-check scripts
-- Praxis-owned kernel build path via `make kernel`
-- Praxis-owned static BusyBox userspace via `make userspace`
-
-Praxis now owns the default kernel and base shell/tool userspace artifacts. The
-package layer can still use `pacman` repositories when host compatibility tools
-are deliberately included, while the distro-native package path matures.
+Desktop environments and bundles still install through `pacman`
+(`config/packages/*.list`, driven by `praxis-packages`) — Praxis vendors
+pacman for that job rather than repackaging every upstream desktop project.
+See `docs/roadmap.md` for what's shipped, in progress, and explicitly not
+happening (PAX, the project's old system-intent language, is gone for good).
 
 ## Repository Layout
 
-- `boot/`: boot configuration and init entrypoint
-- `config/`: distro metadata, manifests, and live-tool definitions
+- `boot/`: boot configuration and the `/init` PID 1 handoff
+- `config/`: hard choice catalogs, base-system manifests, package/bundle
+  lists, seed ledgers
 - `Documentation/`: install steps and operator notes
-- `installer/`: live-environment shell tools
-- `kernel/`: Praxis kernel ownership notes and future kernel artifacts
-- `kernel/bzImage`: generated Praxis kernel artifact used by the ISO build
-- `rootfs/`: base filesystem skeleton staged into initramfs
+- `docs/`: architecture notes (`v2.md`), package format (`pkg-format.md`),
+  and the roadmap
+- `installer/`: live-environment shell tools (`praxis-*`, `mkinitrd`,
+  `targetcheck`)
+- `kernel/`: kernel config fragments, profiles, and the generated `bzImage`
+- `rootfs/`: base filesystem skeleton staged into the initramfs, including
+  `etc/sv/` (service definitions) and `etc/service/` (enabled symlinks)
 - `scripts/`: build, run, and validation helpers
-- `userspace/`: generated Praxis userspace artifacts
-- `docs/`: architecture notes and roadmap
+- `userspace/`: generated BusyBox (and, if built, s6) artifacts
 
 ## Commands
 
@@ -81,6 +91,7 @@ are deliberately included, while the distro-native package path matures.
 make help
 make kernel
 make userspace
+make s6
 make iso
 make qemu
 make qemu-install
@@ -90,9 +101,11 @@ make check
 make check-contract
 make check-owned
 make check-init-profiles
+make check-kernel-profiles
 make check-manifests
 make check-pkg-format
 make check-reproducible
+make check-seeds
 make check-target-audit
 make v1-check
 make v2-half-check
@@ -101,6 +114,7 @@ make v2-check
 
 - `make kernel` builds `kernel/bzImage` from upstream Linux source and records `kernel/PROFILE.applied` plus `kernel/build-info`.
 - `make userspace` builds `userspace/busybox` from upstream BusyBox source.
+- `make s6` builds a fully static skalibs/execline/s6 toolset into `userspace/s6/` (opt-in; not part of the default rootfs).
 - `make iso` builds the Praxis kernel and BusyBox userspace if needed, stages the live rootfs, packages the initramfs, and emits `build/praxis.iso`.
 - `make qemu` boots the latest ISO in a real QEMU window.
 - `make qemu-install` boots the ISO with a writable QEMU disk attached for install testing.
@@ -110,9 +124,11 @@ make v2-check
 - `make check-contract` validates contract export, inspect, and verify behavior.
 - `make check-owned` verifies the default rootfs uses the Praxis kernel, static BusyBox, relative BusyBox applet links, and no host package-manager payloads.
 - `make check-init-profiles` validates `RDINIT`, required files, and required directories for init choices.
+- `make check-kernel-profiles` validates kernel choice/profile wiring.
 - `make check-manifests` validates base-system manifests and package catalog lists.
 - `make check-pkg-format` validates `.prx` metadata, archive layout, local install, and repository index rules.
-- `make check-reproducible` validates build provenance and checksum verification paths.
+- `make check-reproducible` validates build provenance, checksum verification, and that a real double ISO build is byte-identical under `SOURCE_DATE_EPOCH`.
+- `make check-seeds` validates Praxis seed ledgers.
 - `make check-target-audit` validates `targetcheck --strict` and negative audit fixtures.
 - `make v1-check` runs the owned-rootfs check, the full sanity suite, and a headless QEMU smoke boot.
 - `make v2-half-check` verifies the Praxis v2-half contract: hard choices, seed ledgers, and v2 docs.
@@ -164,8 +180,10 @@ praxis-help qemu
 praxis-help commands
 praxis-help packages
 praxis-help docs
+praxis-help v2
 praxis-help first-boot
 praxis-help troubleshooting
+praxis-help changelog
 ```
 
 The live toolkit also includes:
@@ -180,6 +198,9 @@ praxis-support
 praxis-postinstall /mnt/praxis
 praxis-packages list
 praxis-desktop list
+praxis-choice list
+praxis-sv status
+praxis-pkg list
 ```
 
 The install has no wizard and no automation. Each step is manual:
@@ -219,6 +240,10 @@ targetcheck /mnt/praxis
 
 Each stage gates on the previous one. Skipping a step causes the next command to refuse to run.
 
+If something goes wrong partway through, `praxis-recover /mnt/praxis` runs
+`targetcheck` and prints a manual recovery ledger for whatever's missing —
+it's inspect-only and never modifies the target itself.
+
 For a single-file doc pass, use:
 
 ```text
@@ -235,12 +260,14 @@ targetcheck /mnt/praxis
 
 That validator checks the required install artifacts, the boot metadata, and whether the chroot step was completed.
 
-Full manual install steps live in [`Documentation/INSTALL.md`](/home/animated/Praxis/Documentation/INSTALL.md).
-QEMU-specific test loops live in [`Documentation/QEMU.md`](/home/animated/Praxis/Documentation/QEMU.md).
-Command reference lives in [`Documentation/COMMANDS.md`](/home/animated/Praxis/Documentation/COMMANDS.md).
-Package and desktop profile notes live in [`Documentation/PACKAGES.md`](/home/animated/Praxis/Documentation/PACKAGES.md).
-First boot notes live in [`Documentation/FIRST-BOOT.md`](/home/animated/Praxis/Documentation/FIRST-BOOT.md).
-Troubleshooting notes live in [`Documentation/TROUBLESHOOTING.md`](/home/animated/Praxis/Documentation/TROUBLESHOOTING.md).
+Full manual install steps live in [`Documentation/INSTALL.md`](Documentation/INSTALL.md).
+QEMU-specific test loops live in [`Documentation/QEMU.md`](Documentation/QEMU.md).
+Command reference lives in [`Documentation/COMMANDS.md`](Documentation/COMMANDS.md).
+Package and desktop profile notes live in [`Documentation/PACKAGES.md`](Documentation/PACKAGES.md).
+First boot notes live in [`Documentation/FIRST-BOOT.md`](Documentation/FIRST-BOOT.md).
+Troubleshooting notes live in [`Documentation/TROUBLESHOOTING.md`](Documentation/TROUBLESHOOTING.md).
+The v2 contract (choice catalogs, init/kernel rules, package/provenance/contract rules) lives in [`docs/v2.md`](docs/v2.md).
+Where the project is headed lives in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Philosophy
 
