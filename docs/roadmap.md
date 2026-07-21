@@ -34,8 +34,13 @@ PAX-era plan.
 
 ## In Progress
 
-- expand the default `.prx` repository content beyond the current
-  test/reference packages
+- stand up a real `pkg.praxis.dev`-equivalent repo host so
+  `praxis-pkg sync`/`install` have somewhere real to fetch from; today
+  `repos.conf` points at a placeholder domain and only the offline paths
+  (`install-local`, `inspect`, `validate-*`) work
+- build out `.prx` packages for Praxis's own tools and small utilities —
+  `.prx` is intentionally not trying to replace the pacman-driven
+  desktop/bundle path (`config/packages/*.list`), see `docs/pkg-format.md`
 
 ## Next
 
