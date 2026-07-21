@@ -255,6 +255,46 @@ printf '00000000000040008000000000000003\n' > "$tmpdir/live-root/etc/machine-id"
 env \
   PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
   "$repo_root/installer/targetcheck" "$tmpdir/live-root" >/dev/null
+
+# mkinitrd with INITRAMFS_ROOT=disk (praxis-install's real default) and a
+# TARGET_ROOT nested inside SOURCE_ROOT: the exclude list must protect the
+# growing output archive at its real nested path, not just a top-level
+# ./boot guess. Regression test for a real bug where the archive recursed
+# into its own output and grew without bound in exactly this scenario.
+mkdir -p "$tmpdir/disk-source/usr/share/praxis" "$tmpdir/disk-source/mnt/nested-target/etc/praxis"
+# An unrelated ./boot directory elsewhere in the source tree, to prove the
+# exclude targets only the nested target's own boot/, not any directory
+# named "boot" anywhere in the tree (bsdtar's --exclude matches by
+# basename at any depth for a bare pattern like "./boot").
+mkdir -p "$tmpdir/disk-source/unrelated/boot"
+printf 'should survive\n' > "$tmpdir/disk-source/unrelated/boot/keep-me.txt"
+printf 'fake-kernel\n' > "$tmpdir/disk-source/usr/share/praxis/vmlinuz"
+head -c 2000000 /dev/urandom > "$tmpdir/disk-source/filler.bin"
+printf 'UUID=deadbeef / ext4 defaults 0 1\nUUID=feedface /boot vfat defaults 0 2\n' \
+  > "$tmpdir/disk-source/mnt/nested-target/etc/fstab"
+cat > "$tmpdir/disk-source/mnt/nested-target/etc/praxis/initramfs.conf" <<EOF
+INITRAMFS_FORMAT=newc
+INITRAMFS_COMPRESSION=gzip
+INITRAMFS_OWNER=manual
+INITRAMFS_ROOT=disk
+EOF
+printf 'rootfs\n' > "$tmpdir/disk-source/mnt/nested-target/etc/praxis/install-stage"
+timeout 30 env \
+  PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
+  PRAXIS_ALLOW_UNMOUNTED_TARGET=1 \
+  PRAXIS_SOURCE_ROOT="$tmpdir/disk-source" \
+  PRAXIS_INSTALL_KERNEL="$tmpdir/disk-source/usr/share/praxis/vmlinuz" \
+  "$repo_root/installer/mkinitrd" "$tmpdir/disk-source/mnt/nested-target" >/dev/null
+nested_initramfs_size="$(stat -c '%s' "$tmpdir/disk-source/mnt/nested-target/boot/praxis/initramfs.cpio.gz")"
+if [ "$nested_initramfs_size" -gt 10000000 ]; then
+  printf 'mkinitrd disk-mode nested-target archive is %s bytes, expected well under 10MB -- likely recursed into its own output\n' "$nested_initramfs_size" >&2
+  exit 1
+fi
+if ! (cd "$tmpdir" && gzip -dc "disk-source/mnt/nested-target/boot/praxis/initramfs.cpio.gz" | cpio -it 2>/dev/null | grep -q 'unrelated/boot/keep-me.txt'); then
+  printf 'mkinitrd disk-mode archive dropped an unrelated ./boot directory elsewhere in the source tree -- exclude is over-matching by basename instead of the real nested target path\n' >&2
+  exit 1
+fi
+
 env \
   PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
   PRAXIS_SOURCE_ROOT="$tmpdir/rootfs" \

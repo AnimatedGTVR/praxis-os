@@ -90,26 +90,64 @@ fi
 mkdir -p "${TARGET_ROOT}/boot/praxis"
 cp "${KERNEL_SOURCE}" "${TARGET_ROOT}/boot/praxis/vmlinuz"
 
+# The exclude paths below must be relative to INITRAMFS_SOURCE_ROOT, which is
+# NOT always TARGET_ROOT (INITRAMFS_ROOT=disk builds from SOURCE_ROOT, e.g.
+# "/" on a live install, while TARGET_ROOT is the mounted install target,
+# e.g. "/mnt/praxis"). A hardcoded "./boot" exclude only ever protected the
+# output archive when INITRAMFS_SOURCE_ROOT and TARGET_ROOT were the same
+# path -- in the real disk-mode install case they are not, so the archive
+# recursed into its own growing output file with nothing to stop it.
+case "${TARGET_ROOT}" in
+    "${INITRAMFS_SOURCE_ROOT}"/*)
+        TARGET_REL="${TARGET_ROOT#"${INITRAMFS_SOURCE_ROOT}"/}"
+        TARGET_EXCLUDE="./${TARGET_REL}/boot"
+        ARCHIVE_EXCLUDE="./${TARGET_REL}/boot/praxis/initramfs.cpio.gz"
+        ;;
+    "${INITRAMFS_SOURCE_ROOT}")
+        TARGET_EXCLUDE="./boot"
+        ARCHIVE_EXCLUDE="./boot/praxis/initramfs.cpio.gz"
+        ;;
+    *)
+        # TARGET_ROOT is not inside INITRAMFS_SOURCE_ROOT at all (e.g. a
+        # bind mount elsewhere); nothing under INITRAMFS_SOURCE_ROOT can
+        # be the growing output file, so there is nothing to exclude.
+        TARGET_EXCLUDE=""
+        ARCHIVE_EXCLUDE=""
+        ;;
+esac
+
 if command -v bsdtar >/dev/null 2>&1; then
+    bsdtar_exclude_args=""
+    [ -z "${TARGET_EXCLUDE}" ] || bsdtar_exclude_args="--exclude ${TARGET_EXCLUDE} --exclude ${ARCHIVE_EXCLUDE}"
+    # shellcheck disable=SC2086
     bsdtar -C "${INITRAMFS_SOURCE_ROOT}" \
         --format=newc \
         --exclude "./proc" --exclude "./sys" --exclude "./dev" \
         --exclude "./run" --exclude "./tmp" \
-        --exclude "./boot" \
-        --exclude "./boot/praxis/initramfs.cpio.gz" \
+        ${bsdtar_exclude_args} \
         -cf - . | gzip -n -9 > "${TARGET_ROOT}/boot/praxis/initramfs.cpio.gz"
 else
     (
         cd "${INITRAMFS_SOURCE_ROOT}"
-        find . \
-            \( -path ./proc -o -path './proc/*' \
-            -o -path ./sys -o -path './sys/*' \
-            -o -path ./dev -o -path './dev/*' \
-            -o -path ./run -o -path './run/*' \
-            -o -path ./tmp -o -path './tmp/*' \
-            -o -path ./boot -o -path './boot/*' \
-            -o -path ./boot/praxis/initramfs.cpio.gz \) -prune \
-            -o -print | cpio -o -H newc | gzip -n -9
+        if [ -n "${TARGET_EXCLUDE}" ]; then
+            find . \
+                \( -path ./proc -o -path './proc/*' \
+                -o -path ./sys -o -path './sys/*' \
+                -o -path ./dev -o -path './dev/*' \
+                -o -path ./run -o -path './run/*' \
+                -o -path ./tmp -o -path './tmp/*' \
+                -o -path "${TARGET_EXCLUDE}" -o -path "${TARGET_EXCLUDE}/*" \
+                -o -path "${ARCHIVE_EXCLUDE}" \) -prune \
+                -o -print | cpio -o -H newc | gzip -n -9
+        else
+            find . \
+                \( -path ./proc -o -path './proc/*' \
+                -o -path ./sys -o -path './sys/*' \
+                -o -path ./dev -o -path './dev/*' \
+                -o -path ./run -o -path './run/*' \
+                -o -path ./tmp -o -path './tmp/*' \) -prune \
+                -o -print | cpio -o -H newc | gzip -n -9
+        fi
     ) > "${TARGET_ROOT}/boot/praxis/initramfs.cpio.gz"
 fi
 

@@ -50,14 +50,20 @@ printf '%s\n' "This command is inspect-only. It will not fix anything."
 printf '\n'
 
 printf '%s\n' "audit:"
-if PRAXIS_LIB_ROOT="${PRAXIS_LIB_ROOT:-${SCRIPT_DIR}/lib}" "${SCRIPT_DIR}/targetcheck" "${TARGET_ROOT}" >/tmp/praxis-recover-targetcheck.$$ 2>&1; then
-    sed 's/^/  /' /tmp/praxis-recover-targetcheck.$$
-else
-    sed 's/^/  /' /tmp/praxis-recover-targetcheck.$$
-fi
+PRAXIS_LIB_ROOT="${PRAXIS_LIB_ROOT:-${SCRIPT_DIR}/lib}" "${SCRIPT_DIR}/targetcheck" "${TARGET_ROOT}" >/tmp/praxis-recover-targetcheck.$$ 2>&1 || true
+sed 's/^/  /' /tmp/praxis-recover-targetcheck.$$
 rm -f /tmp/praxis-recover-targetcheck.$$
 
 printf '\n%s\n' "manual recovery ledger:"
+
+if ! has_file /etc/praxis/install; then
+    cat <<EOF
+  # /etc/praxis/install is written by praxis-install itself; a missing file
+  # means stage 1 (rootfs deploy) never completed. This is not something to
+  # hand-edit -- rerun the install stage against this target.
+  praxis-install --hostname <name> ${TARGET_ROOT}
+EOF
+fi
 
 if ! has_file /etc/praxis/system.choice; then
     cat <<EOF
@@ -118,6 +124,35 @@ if ! has_entry_option 'rdinit='; then
     cat <<EOF
   # installed boot entries must name the init path
   vi ${TARGET_ROOT}/boot/loader/entries/praxis.conf
+EOF
+fi
+
+if ! has_file /etc/hostname || ! has_file /etc/hosts; then
+    cat <<EOF
+  # write hostname and hosts identity files by hand
+  vi ${TARGET_ROOT}/etc/hostname
+  vi ${TARGET_ROOT}/etc/hosts
+EOF
+fi
+
+if ! has_file /etc/machine-id; then
+    cat <<EOF
+  # write a fresh machine-id (32 lowercase hex chars, no newline needed)
+  od -A n -t x1 /dev/urandom | tr -d ' \\n' | head -c 32 > ${TARGET_ROOT}/etc/machine-id
+EOF
+fi
+
+if ! has_file /etc/locale.conf; then
+    cat <<EOF
+  # write locale defaults
+  printf 'LANG=en_US.UTF-8\\n' > ${TARGET_ROOT}/etc/locale.conf
+EOF
+fi
+
+if [ ! -e "${TARGET_ROOT}/etc/localtime" ]; then
+    cat <<EOF
+  # symlink the timezone
+  ln -sf /usr/share/zoneinfo/UTC ${TARGET_ROOT}/etc/localtime
 EOF
 fi
 
