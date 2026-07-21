@@ -10,6 +10,7 @@ bash -n "$repo_root/scripts/build-rootfs.sh"
 bash -n "$repo_root/scripts/build-metadata.sh"
 bash -n "$repo_root/scripts/build-kernel.sh"
 bash -n "$repo_root/scripts/build-userspace.sh"
+bash -n "$repo_root/scripts/build-s6.sh"
 bash -n "$repo_root/scripts/build-initramfs.sh"
 bash -n "$repo_root/scripts/build-iso.sh"
 bash -n "$repo_root/scripts/check-rootfs-owned.sh"
@@ -420,5 +421,22 @@ test -f "$tmpdir/dev-root/boot/praxis/README.txt"
 test -f "$tmpdir/dev-root/boot/loader/loader.conf"
 test -f "$tmpdir/dev-root/boot/loader/entries/praxis-dev.conf"
 test -f "$tmpdir/dev-root/etc/praxis/dev-install"
+
+# s6 is opt-in (make s6 / PRAXIS_ENABLE_S6=1) and not built by default, so
+# only exercise the real staging path when the artifact already exists --
+# this still catches real regressions in install_s6 on any machine that has
+# built it at least once, without forcing every `make check` run to build
+# skalibs+execline+s6 from source.
+if [ -x "$repo_root/userspace/s6/bin/s6-svscan" ]; then
+  s6_tmpdir="$(mktemp -d)"
+  PRAXIS_ENABLE_S6=1 "$repo_root/scripts/build-rootfs.sh" "$s6_tmpdir/rootfs-s6" >/dev/null
+  test -x "$s6_tmpdir/rootfs-s6/sbin/s6-svscan"
+  test -x "$s6_tmpdir/rootfs-s6/sbin/s6-supervise"
+  test -x "$s6_tmpdir/rootfs-s6/etc/s6/rc-init"
+  test -d "$s6_tmpdir/rootfs-s6/service"
+  grep -qx 'exec /sbin/s6-svscan /service' "$s6_tmpdir/rootfs-s6/etc/s6/rc-init"
+  grep -qx 'export PATH=/sbin:/bin' "$s6_tmpdir/rootfs-s6/etc/s6/rc-init"
+  rm -rf "$s6_tmpdir"
+fi
 
 printf 'Praxis sanity check passed.\n'

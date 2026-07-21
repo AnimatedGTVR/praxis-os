@@ -60,6 +60,35 @@ copy_binary() {
   done < <(ldd "$real_path" 2>/dev/null | awk '{for (i = 1; i <= NF; ++i) if ($i ~ /^\//) print $i}' | sort -u)
 }
 
+install_s6() {
+  local s6_dir="${S6_ARTIFACT_DIR:-$repo_root/userspace/s6}"
+
+  if [[ ! -d "$s6_dir/bin" ]]; then
+    echo "missing Praxis s6 artifact; run make s6 or set S6_ARTIFACT_DIR" >&2
+    exit 1
+  fi
+
+  mkdir -p "$stage_dir/sbin" "$stage_dir/etc/s6" "$stage_dir/service"
+  local binary
+  for binary in "$s6_dir/bin/"*; do
+    [[ -f "$binary" ]] || continue
+    install -Dm755 "$binary" "$stage_dir/sbin/$(basename "$binary")"
+  done
+
+  # s6-svscan requires an explicit scandir argument -- it is not optional and
+  # does not default to the working directory. rdinit= on the kernel command
+  # line cannot pass arguments, so RDINIT must point at this wrapper instead
+  # of the bare binary. It also needs $PATH set: s6-svscan execvp()s
+  # s6-supervise by bare name for each service, and PID 1 otherwise starts
+  # with no environment at all.
+  cat > "$stage_dir/etc/s6/rc-init" <<'RCINIT'
+#!/bin/sh
+export PATH=/sbin:/bin
+exec /sbin/s6-svscan /service
+RCINIT
+  chmod +x "$stage_dir/etc/s6/rc-init"
+}
+
 busybox_has_applet() {
   local applet="$1"
 
@@ -247,6 +276,10 @@ else
 fi
 
 install_busybox
+
+if [[ "${PRAXIS_ENABLE_S6:-0}" == "1" ]]; then
+  install_s6
+fi
 
 # Always vendor essential disk tools — these are not BusyBox applets but are
 # required by praxis-disk and the install flow. Vendor silently if available.

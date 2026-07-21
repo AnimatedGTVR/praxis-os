@@ -4,3 +4,4 @@ build/
 *.img
 pax/interpreter/obj/
 pax/interpreter/bin/
+userspace/s6/

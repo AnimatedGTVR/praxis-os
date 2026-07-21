@@ -9,10 +9,11 @@ ISO_STAGE := $(BUILD_DIR)/iso
 ISO_FILE := $(BUILD_DIR)/praxis.iso
 KERNEL_IMAGE := kernel/bzImage
 BUSYBOX := userspace/busybox
+S6_SVSCAN := userspace/s6/bin/s6-svscan
 QEMU_DISK_FILE := $(BUILD_DIR)/praxis.qcow2
 QEMU_DISK_SIZE ?= 16G
 
-.PHONY: help kernel userspace rootfs initramfs iso iso-full rootfs-full initramfs-full qemu QEMU qmec qemc qemu-disk qemu-chroot qemu-full qemu-install qemu-installed smoke dev-install check check-contract check-owned check-pkg-format check-init-profiles check-kernel-profiles check-manifests check-reproducible check-seeds check-target-audit v1-check v2-half-check v2-check clean
+.PHONY: help kernel userspace s6 rootfs initramfs iso iso-full rootfs-full initramfs-full qemu QEMU qmec qemc qemu-disk qemu-chroot qemu-full qemu-install qemu-installed smoke dev-install check check-contract check-owned check-pkg-format check-init-profiles check-kernel-profiles check-manifests check-reproducible check-seeds check-target-audit v1-check v2-half-check v2-check clean
 
 help:
 	@echo "Praxis"
@@ -21,6 +22,7 @@ help:
 	@echo "  make rootfs     Stage the Praxis root filesystem"
 	@echo "  make kernel PROFILE=stock|tiny|hardened Build the Praxis kernel artifact"
 	@echo "  make userspace  Build the Praxis BusyBox userspace"
+	@echo "  make s6         Build the s6 init toolset (skalibs+execline+s6, static)"
 	@echo "  make initramfs  Build the Praxis initramfs"
 	@echo "  make iso        Build the Praxis ISO"
 	@echo "  make iso-full   Build the Praxis ISO with host tools vendored in"
@@ -60,6 +62,11 @@ userspace: $(BUSYBOX)
 
 $(BUSYBOX):
 	@./scripts/build-userspace.sh
+
+s6: $(S6_SVSCAN)
+
+$(S6_SVSCAN):
+	@./scripts/build-s6.sh
 
 rootfs: kernel userspace
 	@./scripts/build-rootfs.sh "$(ROOTFS_STAGE)"
