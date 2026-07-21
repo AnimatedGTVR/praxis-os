@@ -48,6 +48,19 @@ PAX-era plan.
   diffing two real builds byte-for-byte, with `make check-reproducible`
   now asserting it via a real double build rather than only exercising
   `build-metadata.sh` in isolation
+- fixed a real bug in `mkinitrd`'s `INITRAMFS_ROOT=disk` mode (the
+  default `praxis-install` actually uses): its exclude patterns never
+  accounted for `TARGET_ROOT` being nested inside `SOURCE_ROOT` at a
+  path other than `/boot`, found by running it against a realistic
+  disk-mode install scenario rather than trusting the code by
+  inspection — every real installed system was at risk of a bloated or
+  self-referential initramfs
+- `praxis-recover`'s manual recovery ledger got the same real-target
+  audit treatment: cross-referenced every field `targetcheck` can flag
+  against what the ledger actually suggests, found and filled 6 real
+  gaps (`/etc/praxis/install`, hostname, hosts, machine-id,
+  locale.conf, localtime) by running both tools against a real broken
+  target end to end
 
 ## In Progress
 
@@ -62,8 +75,11 @@ PAX-era plan.
 ## Next
 
 - richer kernel/init profile build mechanics per `docs/v2.md`
-- `praxis-recover`'s manual recovery ledger has not had the same
-  real-target audit `build-iso.sh` just got; worth a similar pass
+- the `mkinitrd` disk-mode fix was verified with synthetic scenarios
+  (real binary, real nested-target layout) but not yet with a real
+  privileged QEMU disk install (`make qemu-full`/`qemu-chroot.sh`,
+  which needs sudo for loop-mount setup); worth a follow-up real
+  disk-install run to confirm end to end
 
 ## Explicitly Not Doing
 
