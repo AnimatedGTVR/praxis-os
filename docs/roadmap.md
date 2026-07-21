@@ -42,6 +42,12 @@ PAX-era plan.
   for installed targets) manages that state
 - `make check` / `make v1-check` / `make v2-check` as layered validation
   gates, all exercised against real QEMU boots, not just static checks
+- `make iso` is actually reproducible under `SOURCE_DATE_EPOCH`, not just
+  documented as such — fixed two real gaps (ISO staging tree mtimes,
+  `limine bios-install`'s wall-clock MBR disk signature) found by
+  diffing two real builds byte-for-byte, with `make check-reproducible`
+  now asserting it via a real double build rather than only exercising
+  `build-metadata.sh` in isolation
 
 ## In Progress
 
@@ -56,8 +62,8 @@ PAX-era plan.
 ## Next
 
 - richer kernel/init profile build mechanics per `docs/v2.md`
-- reproducible image generation and recovery workflow hardening
-  (`Milestone 3` scope from the pre-revival plan; still applicable)
+- `praxis-recover`'s manual recovery ledger has not had the same
+  real-target audit `build-iso.sh` just got; worth a similar pass
 
 ## Explicitly Not Doing
 
