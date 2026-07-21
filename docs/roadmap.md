@@ -25,16 +25,15 @@ PAX-era plan.
 - a runit-style supervise tree for PID 1: `boot/init` mounts pseudo
   filesystems and handles the initramfs-to-installed-root switch, then
   hands off to BusyBox `runsvdir` over `/etc/service`
+- `udev` as its own supervised background service, split out of the
+  shell's boot-time logic; desktop autostart stays inline in the
+  `shell` service since it is inherently console-exclusive with the
+  shell itself
 - `make check` / `make v1-check` / `make v2-check` as layered validation
   gates, all exercised against real QEMU boots, not just static checks
 
 ## In Progress
 
-- split the remaining inline boot-time logic (udev startup, desktop
-  session autostart) out of the `shell` service and into their own
-  supervised `/etc/service/*` entries, so they are independently
-  restartable and logged instead of one-shot branches inside a single
-  service script
 - expand the default `.prx` repository content beyond the current
   test/reference packages
 

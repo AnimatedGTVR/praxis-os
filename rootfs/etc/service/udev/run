@@ -1,0 +1,20 @@
+#!/bin/sh
+
+set -eu
+
+export PATH="/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+if [ ! -x /usr/lib/systemd/systemd-udevd ] || ! command -v udevadm >/dev/null 2>&1; then
+    exec sleep 3600
+fi
+
+mkdir -p /run/udev
+
+/usr/lib/systemd/systemd-udevd --daemon
+udevadm trigger --action=add >/tmp/udevadm-trigger.log 2>&1 || true
+udevadm settle >/tmp/udevadm-settle.log 2>&1 || true
+
+# systemd-udevd --daemon has already forked and detached; give runsv a
+# long-lived foreground process to supervise so it doesn't loop-restart
+# a daemon that (by design) exits its parent immediately after forking.
+exec tail -f /dev/null

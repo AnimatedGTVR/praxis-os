@@ -21,15 +21,6 @@ setup_desktop_environment() {
     cd /root 2>/dev/null || true
 }
 
-start_udev() {
-    if [ -x /usr/lib/systemd/systemd-udevd ] && command -v udevadm >/dev/null 2>&1; then
-        mkdir -p /run/udev
-        /usr/lib/systemd/systemd-udevd --daemon >/tmp/systemd-udevd.log 2>&1 || true
-        udevadm trigger --action=add >/tmp/udevadm-trigger.log 2>&1 || true
-        udevadm settle >/tmp/udevadm-settle.log 2>&1 || true
-    fi
-}
-
 if [ -c /dev/console ]; then
     exec </dev/console >/dev/console 2>&1
 fi
@@ -55,7 +46,6 @@ if grep -qw 'praxis.live=0' /proc/cmdline 2>/dev/null; then
         printf 'Praxis: desktop autostart not available: /root/.xinitrc missing or not executable\n' > "${DESKTOP_LOG}"
     else
         setup_desktop_environment
-        start_udev
         printf 'Praxis: starting desktop session\n' > "${DESKTOP_LOG}"
         startx /root/.xinitrc -- :0 vt1 >> "${DESKTOP_LOG}" 2>&1 || true
         printf 'Praxis: desktop session exited, falling back to shell\n' >> "${DESKTOP_LOG}"
