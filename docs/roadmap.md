@@ -61,6 +61,15 @@ PAX-era plan.
   gaps (`/etc/praxis/install`, hostname, hosts, machine-id,
   locale.conf, localtime) by running both tools against a real broken
   target end to end
+- `s6` is a real, working alternate init choice, not just a catalog
+  entry — `make s6` builds statically-linked skalibs/execline/s6 from
+  source, `PRAXIS_ENABLE_S6=1` stages it opt-in. Fixed two real bugs
+  found only by actually booting it in QEMU: `s6-svscan` requires an
+  explicit `scandir` argument that bare `RDINIT=/sbin/s6-svscan` could
+  never supply, and the supervise tree needs `PATH` set or every
+  service fails to spawn. `systemd` stays a documented-unsupported
+  placeholder in the catalog — building a real systemd userspace is
+  out of scope for Praxis's minimal identity in a way s6 is not
 
 ## In Progress
 
@@ -74,12 +83,16 @@ PAX-era plan.
 
 ## Next
 
-- richer kernel/init profile build mechanics per `docs/v2.md`
 - the `mkinitrd` disk-mode fix was verified with synthetic scenarios
   (real binary, real nested-target layout) but not yet with a real
   privileged QEMU disk install (`make qemu-full`/`qemu-chroot.sh`,
   which needs sudo for loop-mount setup); worth a follow-up real
   disk-install run to confirm end to end
+- `s6` now genuinely builds and boots (`make s6`,
+  `PRAXIS_ENABLE_S6=1`), but hasn't gone through the same real disk
+  install path as the default BusyBox init — worth confirming
+  `praxis-choice emit --init s6` + `mkinitrd` + a real QEMU disk boot
+  all agree, the same way BusyBox's boot path already has
 
 ## Explicitly Not Doing
 
