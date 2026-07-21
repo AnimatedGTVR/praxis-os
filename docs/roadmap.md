@@ -29,6 +29,12 @@ PAX-era plan.
   shell's boot-time logic; desktop autostart stays inline in the
   `shell` service since it is inherently console-exclusive with the
   shell itself
+- the `busybox` init choice's `REQUIRED_FILES`/`REQUIRED_DIRS` and the
+  base-system manifest now reflect the real runit-style supervise tree
+  instead of the pre-revival `/init`-only boot path
+- `docs/v2.md`'s Init Rule documents what BusyBox init actually does:
+  the `runsvdir` handoff, how a service directory's `run` script is
+  supervised, and how to add a new service
 - `make check` / `make v1-check` / `make v2-check` as layered validation
   gates, all exercised against real QEMU boots, not just static checks
 
@@ -44,9 +50,10 @@ PAX-era plan.
 
 ## Next
 
-- decide and document the default init/service catalog operators are
-  expected to enable (mirroring the existing kernel/init choice catalog
-  pattern already used for kernel profiles)
+- a real choice-driven enable/disable catalog for `/etc/service/*`
+  services (mirroring `config/choices/kernel/` and
+  `config/choices/init/`) — every service directory currently runs
+  unconditionally with no catalog to select from
 - richer kernel/init profile build mechanics per `docs/v2.md`
 - reproducible image generation and recovery workflow hardening
   (`Milestone 3` scope from the pre-revival plan; still applicable)
