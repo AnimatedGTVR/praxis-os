@@ -1,42 +1,54 @@
 # Praxis Roadmap
 
-## Milestone 0
+Praxis is being rebuilt as a lightweight, minimal Linux distribution
+inspired by the philosophy of Alpine Linux and Void Linux, while keeping
+its own identity. This roadmap reflects that direction, not the earlier
+PAX-era plan.
 
-- establish the repo layout
-- define the distro identity
-- ship the shell-first live environment and install command
-- stage a rootfs and initramfs cleanly
-- make `make iso` and `make qemu` the default workflow
+## Shipped
 
-## Milestone 1
+- shell-first live environment with an explicit multi-stage install
+- a Praxis-owned kernel artifact in `kernel/` (profile-selectable: stock,
+  tiny, hardened)
+- a Praxis-owned static BusyBox userspace artifact in `userspace/`
+- `make iso` / `make qemu` / `make smoke` as the default build and boot
+  workflow
+- a Limine removable-UEFI fallback for installed targets
+- local docs and a stable `praxis-help` path inside the live image
+- hard choice catalogs (`praxis-choice`), seed ledgers (`praxis-seed`),
+  base-system manifests (`praxis-manifest`), build provenance
+  (`praxis-provenance`), and portable contracts (`praxis-contract`)
+- `praxis-pkg`: a native `.prx` binary package manager (reverse-domain
+  identifiers, gzip-tar archives, tab-delimited repo indexes) with real
+  dependency resolution on install and real tracked-file removal on
+  uninstall
+- a runit-style supervise tree for PID 1: `boot/init` mounts pseudo
+  filesystems and handles the initramfs-to-installed-root switch, then
+  hands off to BusyBox `runsvdir` over `/etc/service`
+- `make check` / `make v1-check` / `make v2-check` as layered validation
+  gates, all exercised against real QEMU boots, not just static checks
 
-- ship a Praxis-owned kernel artifact in `kernel/`
-- replace the default host-kernel path with an explicit Praxis kernel build
-- ship a Praxis-owned BusyBox userspace artifact in `userspace/`
-- make host-vendored live tools an explicit compatibility mode
-- verify the default rootfs does not accidentally depend on host artifacts
-- install a Limine removable-UEFI fallback for installed targets
-- make the live image boot reliably in QEMU
-- tighten the installed-system boot story beyond the current systemd-boot entry generation
-- ship local docs and a stable help path inside the live image
+## In Progress
 
-## Milestone 2
+- split the remaining inline boot-time logic (udev startup, desktop
+  session autostart) out of the `shell` service and into their own
+  supervised `/etc/service/*` entries, so they are independently
+  restartable and logged instead of one-shot branches inside a single
+  service script
+- expand the default `.prx` repository content beyond the current
+  test/reference packages
 
-- expand the live environment toolset
-- add real system-seeding mechanics without hiding the install path
-- make the first release feel complete without turning Praxis into a black box
+## Next
 
-### Milestone 2 Halfway Contract
+- decide and document the default init/service catalog operators are
+  expected to enable (mirroring the existing kernel/init choice catalog
+  pattern already used for kernel profiles)
+- richer kernel/init profile build mechanics per `docs/v2.md`
+- reproducible image generation and recovery workflow hardening
+  (`Milestone 3` scope from the pre-revival plan; still applicable)
 
-- define the Praxis v2 contract in `docs/v2.md`
-- expose hard kernel/init/package choice catalogs through `praxis-choice`
-- ship `praxis-seed` as the first explicit system-seeding tool
-- ship a readable default seed ledger in `config/seeds/v2-half.seed`
-- stage v2 docs and seed ledgers into the live rootfs
-- add `make v2-half-check` as the gate for this midpoint
+## Explicitly Not Doing
 
-## Milestone 3
-
-- formalize package and base-system manifests
-- add reproducible image generation
-- define recovery behavior and post-install workflows
+- PAX, or any system-intent language layer. Removed; will not return.
+  Praxis stays shell-first — explicit commands and inspectable state,
+  not a scripting or declarative layer on top of the install path.
