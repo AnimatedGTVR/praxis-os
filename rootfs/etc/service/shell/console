@@ -1,0 +1,72 @@
+#!/bin/sh
+
+set -eu
+
+export PATH="/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export HOME=/root
+
+DESKTOP_LOG=/tmp/praxis-desktop.log
+
+desktop_name() {
+    sed -n 's/^DESKTOP=//p' /etc/praxis/desktop-session 2>/dev/null | sed -n '1p'
+}
+
+setup_desktop_environment() {
+    export USER=root
+    export LOGNAME=root
+    export HOME=/root
+    export XDG_RUNTIME_DIR=/run/root
+    mkdir -p /run/root
+    chmod 700 /run/root
+    cd /root 2>/dev/null || true
+}
+
+start_udev() {
+    if [ -x /usr/lib/systemd/systemd-udevd ] && command -v udevadm >/dev/null 2>&1; then
+        mkdir -p /run/udev
+        /usr/lib/systemd/systemd-udevd --daemon >/tmp/systemd-udevd.log 2>&1 || true
+        udevadm trigger --action=add >/tmp/udevadm-trigger.log 2>&1 || true
+        udevadm settle >/tmp/udevadm-settle.log 2>&1 || true
+    fi
+}
+
+if [ -c /dev/console ]; then
+    exec </dev/console >/dev/console 2>&1
+fi
+
+if grep -qw 'praxis.live=0' /proc/cmdline 2>/dev/null; then
+    if [ ! -r /etc/praxis/desktop-session ]; then
+        printf 'Praxis: desktop autostart not configured: /etc/praxis/desktop-session missing\n' > "${DESKTOP_LOG}"
+    elif [ "$(desktop_name)" = "budgie" ]; then
+        if ! command -v startbudgielabwc >/dev/null 2>&1; then
+            printf 'Praxis: Budgie autostart not available: startbudgielabwc missing\n' > "${DESKTOP_LOG}"
+        else
+            setup_desktop_environment
+            export XDG_CURRENT_DESKTOP=Budgie
+            export XDG_SESSION_DESKTOP=budgie-desktop
+            export DESKTOP_SESSION=budgie-desktop
+            printf 'Praxis: starting Budgie Wayland session\n' > "${DESKTOP_LOG}"
+            startbudgielabwc >> "${DESKTOP_LOG}" 2>&1 || true
+            printf 'Praxis: Budgie session exited, falling back to shell\n' >> "${DESKTOP_LOG}"
+        fi
+    elif ! command -v startx >/dev/null 2>&1; then
+        printf 'Praxis: desktop autostart not available: startx missing\n' > "${DESKTOP_LOG}"
+    elif [ ! -x /root/.xinitrc ]; then
+        printf 'Praxis: desktop autostart not available: /root/.xinitrc missing or not executable\n' > "${DESKTOP_LOG}"
+    else
+        setup_desktop_environment
+        start_udev
+        printf 'Praxis: starting desktop session\n' > "${DESKTOP_LOG}"
+        startx /root/.xinitrc -- :0 vt1 >> "${DESKTOP_LOG}" 2>&1 || true
+        printf 'Praxis: desktop session exited, falling back to shell\n' >> "${DESKTOP_LOG}"
+    fi
+fi
+
+cd /root 2>/dev/null || cd /
+
+export PS1='praxis# '
+
+if command -v setsid >/dev/null 2>&1; then
+    exec setsid -c /bin/sh
+fi
+exec /bin/sh

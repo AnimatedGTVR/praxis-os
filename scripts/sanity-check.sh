@@ -30,6 +30,8 @@ bash -n "$repo_root/scripts/run-qemu.sh"
 bash -n "$repo_root/scripts/sanity-check.sh"
 
 sh -n "$repo_root/boot/init"
+sh -n "$repo_root/rootfs/etc/service/shell/run"
+sh -n "$repo_root/rootfs/etc/service/shell/console"
 sh -n "$repo_root/installer/lib/common.sh"
 sh -n "$repo_root/installer/praxis-banner"
 sh -n "$repo_root/installer/praxis-fetch"
