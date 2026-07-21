@@ -127,9 +127,6 @@ mkdir -p \
   "$stage_dir/usr/local/bin" \
   "$stage_dir/usr/local/lib/praxis" \
   "$stage_dir/usr/share/doc/praxis" \
-  "$stage_dir/usr/share/doc/praxis/pax/examples" \
-  "$stage_dir/usr/share/doc/praxis/pax/spec" \
-  "$stage_dir/usr/share/doc/praxis/pax/tests" \
   "$stage_dir/usr/share/libalpm" \
   "$stage_dir/usr/share/pacman" \
   "$stage_dir/usr/share/praxis/boot" \
@@ -197,12 +194,6 @@ fi
 if [[ -f "$repo_root/Documentation/PACKAGES.md" ]]; then
   cp "$repo_root/Documentation/PACKAGES.md" "$stage_dir/usr/share/doc/praxis/PACKAGES.md"
 fi
-cp "$repo_root/pax/README.md" "$stage_dir/usr/share/doc/praxis/pax/README.md"
-cp "$repo_root/pax/spec/PAX.md" "$stage_dir/usr/share/doc/praxis/PAX.md"
-cp "$repo_root/pax/spec/PAX.md" "$stage_dir/usr/share/doc/praxis/pax/spec/PAX.md"
-cp "$repo_root/pax/spec/PAX-V2.md" "$stage_dir/usr/share/doc/praxis/pax/spec/PAX-V2.md"
-cp -a "$repo_root/pax/examples/." "$stage_dir/usr/share/doc/praxis/pax/examples/"
-cp -a "$repo_root/pax/tests/." "$stage_dir/usr/share/doc/praxis/pax/tests/"
 cp "$repo_root/branding/fastfetch/praxis.txt" "$stage_dir/usr/share/praxis/branding/fastfetch/praxis.txt"
 cp "$repo_root/branding/fastfetch/praxis-text.txt" "$stage_dir/usr/share/praxis/branding/fastfetch/praxis-text.txt"
 

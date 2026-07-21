@@ -28,4 +28,3 @@ path|file|/usr/share/praxis/vmlinuz|praxis|kernel artifact
 path|file|/usr/share/praxis/kernel/config.fragment|praxis|kernel base fragment
 path|dir|/usr/share/praxis/kernel/profiles|praxis|kernel profile fragments
 path|file|/usr/share/doc/praxis/V2.md|praxis|v2 contract docs
-path|file|/usr/share/doc/praxis/pax/spec/PAX-V2.md|praxis|pax v2 contract docs

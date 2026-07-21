@@ -14,8 +14,6 @@ sh -n "$repo_root/installer/praxis-provenance"
 sh -n "$repo_root/installer/praxis-recover"
 
 test -f "$repo_root/docs/v2.md"
-test -f "$repo_root/pax/spec/PAX-V2.md"
-test -f "$repo_root/pax/examples/full-install-v2.pax"
 test -f "$repo_root/config/seeds/v2-half.seed"
 test -f "$repo_root/config/manifests/base-system.manifest"
 test -f "$repo_root/config/choices/kernel/tiny.conf"
@@ -53,8 +51,6 @@ test -f "$tmpdir/var/lib/praxis/seed-stage"
 grep -qx 'v2-half' "$tmpdir/var/lib/praxis/seed-stage"
 grep -q 'Praxis v2-half seed applied.' "$tmpdir/etc/motd"
 
-"$repo_root/scripts/check-pax.sh" >/dev/null
-"$repo_root/scripts/check-pax-v2.sh" >/dev/null
 "$repo_root/scripts/check-pkg-format.sh" >/dev/null
 "$repo_root/scripts/check-manifests.sh" >/dev/null
 "$repo_root/scripts/check-reproducible.sh" >/dev/null

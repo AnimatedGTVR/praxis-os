@@ -1,7 +1,7 @@
 # Praxis Docs
 
 Single-file reference. Covers install, QEMU workflows, commands, packages,
-troubleshooting, and PAX.
+and troubleshooting.
 
 ---
 
@@ -27,7 +27,6 @@ Praxis currently includes:
 - a branded fetch display (`praxis-fetch`)
 - local docs available inside the live image and installed target
 - QEMU boot, install, and smoke-test workflows
-- PAX — a domain-specific language for system intent
 
 ## Repository Layout
 
@@ -37,7 +36,6 @@ config/         distro metadata, manifests, package maps
 Documentation/  operator docs (this directory)
 docs/           architecture notes, roadmap, wiki pages
 installer/      live-environment commands
-pax/            Praxis domain-specific language
 rootfs/         base filesystem skeleton
 scripts/        build, boot, and validation helpers
 ```
@@ -265,7 +263,6 @@ praxis-help commands
 praxis-help packages
 praxis-help troubleshooting
 praxis-help first-boot
-praxis-help pax
 praxis-help changelog
 ```
 
@@ -388,7 +385,7 @@ org.videolan.vlc
 ```
 
 `dev.praxis.*` is the Praxis native namespace. Bare names like `firefox` are
-rejected by the tool and the PAX interpreter.
+rejected by the tool.
 
 ### praxis-pkg
 
@@ -413,119 +410,6 @@ praxis-pkg repos
 
 `.prx` — gzip-compressed tar with a `PKGINFO` metadata file and a `data/`
 filesystem tree. Full spec: `docs/pkg-format.md`.
-
----
-
-## PAX
-
-PAX is the domain-specific language for Praxis. It is not a general scripting
-language. Every step is written out. Nothing runs unless you wrote it.
-
-All PAX files use the `.pax` extension.
-
-### Required Header
-
-```text
-[.Praxis Config - <label> .praxis.pax./]
-```
-
-### Types
-
-```
-string   "text"
-int      42, -10
-bool     true, false
-symbol   xfce, good, finished
-path     config.desktop, hardware.status
-list     [ dev.praxis.git, dev.praxis.htop ]
-```
-
-### Binding
-
-```pax
-let   name = value      # immutable
-var   name = value      # mutable
-define NAME = value     # file-level constant
-```
-
-### Conditions
-
-```pax
-if hardware.status == good { }
-if install.status != finished { }
-if not disk.status == error { }
-if hardware.status == good and net.status == up { }
-```
-
-### Iteration
-
-```pax
-let packages = [ dev.praxis.git, dev.praxis.htop ]
-each pkg in packages {
-    install package pkg
-}
-```
-
-### Package Identifiers in PAX
-
-```pax
-install package dev.praxis.neovim
-install package org.mozilla.firefox
-install bundle "essentials"
-install bundle "developer"
-```
-
-Bundles are quoted strings. Packages use reverse-domain identifiers (no quotes).
-
-### Key Actions
-
-```pax
-check hardware
-install package dev.praxis.neovim
-install bundle "essentials"
-install desktop xfce
-set hostname "praxisvm"
-set locale "en_US.UTF-8"
-set timezone "America/New_York"
-write "/etc/hostname" content "praxisvm\n"
-exec "locale-gen"
-mount "/dev/vda2" at "/mnt/praxis"
-format "/dev/vda1" as vfat
-service enable "NetworkManager"
-user create "alice"
-user add-group "alice" "wheel"
-bootloader install limine
-initramfs build "/mnt/praxis"
-require hardware.status == good
-assert install.status == finished "Install must complete."
-log "Step complete."
-warn "Proceeding without network."
-fail "Cannot continue: {disk.status}"
-```
-
-### Interpreter
-
-```bash
-dotnet run --project pax/interpreter/PaxInterpreter.csproj -- pax/examples/full-install.pax
-dotnet run --project pax/interpreter/PaxInterpreter.csproj -- --v2 pax/examples/full-install-v2.pax
-```
-
-Current language reference: `pax/spec/PAX-V2.md`
-
-Legacy v1 reference: `pax/spec/PAX.md`
-
-### Example Files
-
-```
-pax/examples/packageinstall-config.pax   reference example
-pax/examples/full-install.pax            complete install flow
-pax/examples/disk-setup.pax             partitioning and formatting
-pax/examples/user-setup.pax             users and groups
-pax/examples/service-config.pax         service management
-pax/examples/workstation-config.pax     desktop + software preset
-pax/examples/core-packages.pax          core package profile
-pax/examples/source-pkg.pax             source build workflow
-```
 
 ---
 

@@ -1,4 +1,0 @@
-[.Praxis Config - unknown dotted path v2 .praxis.pax./]
-
-install package org.example.editor
-assert state.package.last_install == org.example.editor "package install did not land"

@@ -12,7 +12,7 @@ BUSYBOX := userspace/busybox
 QEMU_DISK_FILE := $(BUILD_DIR)/praxis.qcow2
 QEMU_DISK_SIZE ?= 16G
 
-.PHONY: help kernel userspace rootfs initramfs iso iso-full rootfs-full initramfs-full qemu QEMU qmec qemc qemu-disk qemu-chroot qemu-full qemu-install qemu-installed smoke dev-install check check-contract check-owned check-pax check-pkg-format check-init-profiles check-kernel-profiles check-manifests check-reproducible check-seeds check-target-audit v1-check v2-half-check v2-check clean
+.PHONY: help kernel userspace rootfs initramfs iso iso-full rootfs-full initramfs-full qemu QEMU qmec qemc qemu-disk qemu-chroot qemu-full qemu-install qemu-installed smoke dev-install check check-contract check-owned check-pkg-format check-init-profiles check-kernel-profiles check-manifests check-reproducible check-seeds check-target-audit v1-check v2-half-check v2-check clean
 
 help:
 	@echo "Praxis"
@@ -36,10 +36,9 @@ help:
 	@echo "  make qemc       Alias for qemu"
 	@echo "  make smoke      Verify Praxis reaches the shell prompt in QEMU"
 	@echo "  make dev-install TARGET=/mnt/praxis-dev"
-	@echo "  make check      Run shell, staging, and PAX sanity checks"
+	@echo "  make check      Run shell and staging sanity checks"
 	@echo "  make check-contract Validate contract export/inspect/verify"
 	@echo "  make check-owned Verify the default rootfs uses Praxis-owned artifacts"
-	@echo "  make check-pax  Validate PAX headers, examples, and doc references"
 	@echo "  make check-pkg-format Validate .prx metadata and index rules"
 	@echo "  make check-init-profiles Validate init choice/profile wiring"
 	@echo "  make check-kernel-profiles Validate kernel choice/profile wiring"
@@ -129,9 +128,6 @@ check-contract:
 
 check-owned:
 	@./scripts/check-rootfs-owned.sh
-
-check-pax:
-	@./scripts/check-pax.sh
 
 check-pkg-format:
 	@./scripts/check-pkg-format.sh

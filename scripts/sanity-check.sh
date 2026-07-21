@@ -13,8 +13,6 @@ bash -n "$repo_root/scripts/build-userspace.sh"
 bash -n "$repo_root/scripts/build-initramfs.sh"
 bash -n "$repo_root/scripts/build-iso.sh"
 bash -n "$repo_root/scripts/check-rootfs-owned.sh"
-bash -n "$repo_root/scripts/check-pax.sh"
-bash -n "$repo_root/scripts/check-pax-v2.sh"
 bash -n "$repo_root/scripts/check-contract.sh"
 bash -n "$repo_root/scripts/check-pkg-format.sh"
 bash -n "$repo_root/scripts/check-init-profiles.sh"
@@ -63,8 +61,6 @@ sh -n "$repo_root/installer/praxis-dev-install"
 
 "$repo_root/scripts/build-rootfs.sh" "$tmpdir/rootfs"
 "$repo_root/scripts/check-rootfs-owned.sh" "$tmpdir/rootfs" >/dev/null
-"$repo_root/scripts/check-pax.sh" >/dev/null
-"$repo_root/scripts/check-pax-v2.sh" >/dev/null
 "$repo_root/scripts/check-contract.sh" >/dev/null
 "$repo_root/scripts/check-pkg-format.sh" >/dev/null
 "$repo_root/scripts/check-init-profiles.sh" >/dev/null
@@ -322,17 +318,6 @@ test -f "$tmpdir/rootfs/usr/share/doc/praxis/TROUBLESHOOTING.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/PACKAGES.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/PKG-FORMAT.md"
 test -f "$tmpdir/rootfs/usr/share/doc/praxis/V2.md"
-test -f "$tmpdir/rootfs/usr/share/doc/praxis/PAX.md"
-test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/README.md"
-test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/spec/PAX.md"
-test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/spec/PAX-V2.md"
-test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/packageinstall-config.pax"
-test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/full-install-v2.pax"
-test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/source-pkg.pax"
-test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/tests/v2-invalid/dangerous-without-assert.pax"
-test -f "$tmpdir/rootfs/usr/share/doc/praxis/pax/tests/v2-invalid/unknown-dotted-path.pax"
-test ! -e "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/source-pkg.pkg.pax"
-test ! -e "$tmpdir/rootfs/usr/share/doc/praxis/pax/examples/sourcepkg-config.pkg.pax"
 test -f "$tmpdir/rootfs/bin/mount"
 test -f "$tmpdir/rootfs/bin/grep"
 test -f "$tmpdir/rootfs/bin/tar"

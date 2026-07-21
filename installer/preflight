@@ -128,7 +128,6 @@ check_file_pair /etc/praxis/praxis.env "${REPO_ROOT}/config/praxis.env"
 check_file_pair /usr/share/doc/praxis/DOC.md "${REPO_ROOT}/Documentation/DOC.md"
 check_file_pair /usr/share/doc/praxis/INSTALL.md "${REPO_ROOT}/Documentation/INSTALL.md"
 check_file_pair /usr/share/doc/praxis/COMMANDS.md "${REPO_ROOT}/Documentation/COMMANDS.md"
-check_file_pair /usr/share/doc/praxis/PAX.md "${REPO_ROOT}/pax/spec/PAX.md"
 printf '\n'
 
 if [ -n "${TARGET_ROOT}" ]; then

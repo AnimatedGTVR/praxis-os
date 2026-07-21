@@ -2,3 +2,5 @@ build/
 *.qcow2
 *.iso
 *.img
+pax/interpreter/obj/
+pax/interpreter/bin/

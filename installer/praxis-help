@@ -80,9 +80,6 @@ case "${1:-}" in
     docs)
         show_doc "DOC.md"
         ;;
-    pax)
-        show_doc "PAX.md"
-        ;;
     v2)
         show_doc "V2.md"
         ;;
@@ -104,7 +101,7 @@ case "${1:-}" in
         ;;
     *)
         printf 'unknown topic: %s\n' "${1}" >&2
-        printf '%s\n' "available topics: install, qemu, commands, packages, docs, pax, v2, first-boot, troubleshooting, changelog, readme" >&2
+        printf '%s\n' "available topics: install, qemu, commands, packages, docs, v2, first-boot, troubleshooting, changelog, readme" >&2
         exit 1
         ;;
 esac
@@ -116,7 +113,6 @@ printf '%s\n' "  praxis-help qemu"
 printf '%s\n' "  praxis-help commands"
 printf '%s\n' "  praxis-help packages"
 printf '%s\n' "  praxis-help docs"
-printf '%s\n' "  praxis-help pax"
 printf '%s\n' "  praxis-help v2"
 printf '%s\n' "  praxis-help first-boot"
 printf '%s\n' "  praxis-help troubleshooting"

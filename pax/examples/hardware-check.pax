@@ -1,9 +1,0 @@
-[.Praxis Config - hardware check v2 .praxis.pax./]
-
-# Hardware gate in PAX v2 form.
-
-check hardware
-assert state.hardware.status == good "hardware validation failed"
-assert state.hardware.arch == x86_64 "unsupported architecture"
-
-log "Hardware validation passed."

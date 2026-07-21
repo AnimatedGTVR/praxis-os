@@ -107,7 +107,6 @@ praxis-help qemu
 praxis-help commands
 praxis-help packages
 praxis-help docs
-praxis-help pax
 praxis-help first-boot
 praxis-help troubleshooting
 ```

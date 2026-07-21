@@ -8,7 +8,6 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 bash -n "$repo_root/scripts/v2-check.sh"
 bash -n "$repo_root/scripts/v2-half-check.sh"
-bash -n "$repo_root/scripts/check-pax-v2.sh"
 bash -n "$repo_root/scripts/check-contract.sh"
 bash -n "$repo_root/scripts/check-pkg-format.sh"
 bash -n "$repo_root/scripts/check-init-profiles.sh"
@@ -24,7 +23,6 @@ sh -n "$repo_root/installer/praxis-seed"
 sh -n "$repo_root/installer/praxis-recover"
 
 "$repo_root/scripts/v2-half-check.sh" >/dev/null
-"$repo_root/scripts/check-pax-v2.sh" >/dev/null
 "$repo_root/scripts/check-contract.sh" >/dev/null
 "$repo_root/scripts/check-pkg-format.sh" >/dev/null
 "$repo_root/scripts/check-init-profiles.sh" >/dev/null
@@ -36,8 +34,6 @@ sh -n "$repo_root/installer/praxis-recover"
 
 for file in \
   "$repo_root/docs/v2.md" \
-  "$repo_root/pax/spec/PAX-V2.md" \
-  "$repo_root/pax/examples/full-install-v2.pax" \
   "$repo_root/config/choices/kernel/stock.conf" \
   "$repo_root/config/choices/kernel/tiny.conf" \
   "$repo_root/config/choices/kernel/hardened.conf" \

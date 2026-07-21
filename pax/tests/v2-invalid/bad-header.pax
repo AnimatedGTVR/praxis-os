@@ -1,4 +1,0 @@
-[.Praxis Config - bad header .praxis.pax./]
-
-check hardware
-assert state.hardware.status == good "hardware gate failed"

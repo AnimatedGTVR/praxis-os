@@ -6,7 +6,7 @@
 >
 > After rethinking my decision to archive Praxis, I've decided to bring the project back with a new vision.
 >
-> Instead of pursuing its previous direction, Praxis is being rebuilt as a lightweight, minimal Linux distribution inspired by the philosophy of Alpine Linux while maintaining its own identity and goals.
+> Instead of pursuing its previous direction, Praxis is being rebuilt as a lightweight, minimal Linux distribution inspired by the philosophy of Alpine Linux and Void Linux while maintaining its own identity and goals.
 >
 > Praxis is currently **experimental** and **not ready for production use**. It may contain incomplete features, bugs, installation failures, boot issues, or data loss risks. Interfaces, commands, package formats, and installation procedures may change between releases without notice.
 >
@@ -35,9 +35,8 @@ Praxis is shell-first by design:
 The project goal: own the stack without abstraction. Partitioning, fstab,
 initramfs, chroot configuration, boot entry — each step is yours.
 
-Praxis is not for beginners. The live ISO gives you tools, catalogs, docs, and
-PAX, a custom system-intent language. It does not try to hide the machine from
-you.
+Praxis is not for beginners. The live ISO gives you tools, catalogs, and docs.
+It does not try to hide the machine from you.
 
 ## Current Status
 
@@ -117,7 +116,7 @@ make v2-check
 - `make check-target-audit` validates `targetcheck --strict` and negative audit fixtures.
 - `make v1-check` runs the owned-rootfs check, the full sanity suite, and a headless QEMU smoke boot.
 - `make v2-half-check` verifies the Praxis v2-half contract: hard choices, seed ledgers, and v2 docs.
-- `make v2-check` verifies most of the Praxis v2 contract, including hard choices, manifests, recovery ledgers, and PAX v2 assertion discipline.
+- `make v2-check` verifies most of the Praxis v2 contract, including hard choices, manifests, and recovery ledgers.
 
 ## Recommended Workflow
 
@@ -165,7 +164,6 @@ praxis-help qemu
 praxis-help commands
 praxis-help packages
 praxis-help docs
-praxis-help pax
 praxis-help first-boot
 praxis-help troubleshooting
 ```
@@ -226,15 +224,6 @@ For a single-file doc pass, use:
 ```text
 Documentation/DOC.md
 ```
-
-For Praxis language docs, use:
-
-```text
-pax/README.md
-pax/spec/PAX-V2.md
-```
-
-The legacy v1 reference remains at `pax/spec/PAX.md`.
 
 Praxis installs a Limine removable-UEFI fallback at `boot/EFI/BOOT/BOOTX64.EFI`. If `/boot` is the mounted EFI system partition and `bootctl` is available, Praxis also tries to install systemd-boot automatically without touching EFI variables.
 

@@ -1,4 +1,0 @@
-[.Praxis Config - unknown type v2 .praxis.pax./]
-
-let Mystery value = "nope"
-log "bad type"
