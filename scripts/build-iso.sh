@@ -99,6 +99,18 @@ fi
     xargs -0 sha256sum > praxis-stage.sha256
 )
 
+if [[ -n "${SOURCE_DATE_EPOCH:-}" ]]; then
+  if ! [[ "$SOURCE_DATE_EPOCH" =~ ^[0-9]+$ ]]; then
+    echo "SOURCE_DATE_EPOCH must be an integer epoch value" >&2
+    exit 1
+  fi
+  # xorriso derives its ISO9660 PVD and per-file timestamps from
+  # SOURCE_DATE_EPOCH automatically (see xorrisofs(1)), but only for files
+  # whose own mtime already matches; normalize the staging tree first so
+  # two builds from identical inputs produce byte-identical output.
+  find "$iso_stage" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+fi
+
 if ! command -v xorriso >/dev/null 2>&1; then
   echo "missing required tool: xorriso" >&2
   exit 1
@@ -123,6 +135,29 @@ xorriso -as mkisofs \
   "$iso_stage"
 
 limine bios-install "$iso_file"
+
+if [[ -n "${SOURCE_DATE_EPOCH:-}" ]]; then
+  command -v python3 >/dev/null 2>&1 || {
+    echo "missing required tool: python3 (needed to normalize the MBR disk signature for SOURCE_DATE_EPOCH)" >&2
+    exit 1
+  }
+  # limine bios-install writes a fresh MBR disk signature (4 bytes at the
+  # standard offset 440) derived from the current wall clock, with no flag
+  # to override it. That alone makes two otherwise-identical builds differ,
+  # so replace it with a value deterministically derived from
+  # SOURCE_DATE_EPOCH. The signature is cosmetic for boot (verified via a
+  # real QEMU smoke boot with a patched ISO); this only affects
+  # reproducibility, not bootability.
+  python3 - "$iso_file" "$SOURCE_DATE_EPOCH" <<'PY'
+import struct
+import sys
+
+iso_path, epoch = sys.argv[1], int(sys.argv[2])
+with open(iso_path, "r+b") as f:
+    f.seek(440)
+    f.write(struct.pack("<I", epoch & 0xFFFFFFFF))
+PY
+fi
 
 "$repo_root/scripts/build-metadata.sh" \
   "$iso_file.build-info" \

@@ -31,4 +31,34 @@ PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
 PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
   "$repo_root/installer/praxis-provenance" verify "$tmpdir/root" >/dev/null
 
+bash -n "$repo_root/scripts/build-iso.sh"
+
+if command -v xorriso >/dev/null 2>&1 && command -v limine >/dev/null 2>&1; then
+  printf 'test\n' > "$tmpdir/vmlinuz"
+  printf 'test\n' > "$tmpdir/initramfs.cpio.gz"
+
+  build_test_iso() {
+    local out="$1"
+    KERNEL_IMAGE="$tmpdir/vmlinuz" \
+      SOURCE_DATE_EPOCH=1700000000 \
+      "$repo_root/scripts/build-iso.sh" \
+        "$tmpdir/initramfs.cpio.gz" \
+        "$tmpdir/iso-stage-$out" \
+        "$tmpdir/$out.iso" >/dev/null
+  }
+
+  build_test_iso a
+  sleep 2
+  build_test_iso b
+
+  a_sum="$(sha256sum "$tmpdir/a.iso" | cut -d' ' -f1)"
+  b_sum="$(sha256sum "$tmpdir/b.iso" | cut -d' ' -f1)"
+  if [[ "$a_sum" != "$b_sum" ]]; then
+    printf 'ISO build is not reproducible under SOURCE_DATE_EPOCH: %s != %s\n' "$a_sum" "$b_sum" >&2
+    exit 1
+  fi
+else
+  printf 'skipping ISO reproducibility check: xorriso and/or limine not installed\n' >&2
+fi
+
 printf 'Reproducible build check passed.\n'
