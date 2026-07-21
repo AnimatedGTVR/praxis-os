@@ -231,6 +231,10 @@ praxis-postinstall <target>
 
 ### Packages
 
+Desktop environments and bundles are installed through pacman, driven by
+`config/packages/*.list`. Praxis vendors pacman for this rather than
+repackaging every upstream desktop project.
+
 ```bash
 praxis-packages list
 praxis-packages show desktop <name>
@@ -240,6 +244,10 @@ praxis-desktop start <name>
 ```
 
 ### Native Package Manager
+
+`praxis-pkg` is a separate, lightweight tool for Praxis's own `.prx`
+packages — not a replacement for the pacman-driven desktop/bundle path
+above. See `docs/pkg-format.md` for the full format and repo status.
 
 ```bash
 praxis-pkg sync

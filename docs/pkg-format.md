@@ -1,5 +1,20 @@
 # Praxis Package Format — .prx
 
+> [!NOTE]
+> `.prx` is Praxis's own lightweight package format, separate from the
+> pacman-based desktop/bundle installs described in `praxis-help packages`
+> (`config/packages/*.list`, driven by `praxis-packages`). Desktop
+> environments and their dependencies are large enough that Praxis vendors
+> pacman for that job rather than repackaging every upstream project as
+> `.prx`. `.prx` is for Praxis's own tools and small packages, not a
+> replacement for the desktop package pipeline.
+>
+> The default repos in `/etc/praxis/repos.conf` (`pkg.praxis.dev/*`) are
+> placeholders — no server exists there yet. `praxis-pkg sync`/`install`
+> need a real repo URL to do anything useful over the network.
+> `praxis-pkg install-local`, `inspect`, `validate-pkginfo`, and
+> `validate-index` all work fully offline against local `.prx` files today.
+
 ## Overview
 
 Praxis native packages use the `.prx` format. A `.prx` file is a gzip-compressed
