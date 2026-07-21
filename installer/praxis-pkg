@@ -332,6 +332,80 @@ cmd_search() {
     done
 }
 
+_pkg_is_installed() {
+    [ -f "/var/lib/praxis-pkg/installed/$1.PKGINFO" ]
+}
+
+_install_one() {
+    local id="$1" chain="$2"
+
+    _pkg_is_installed "$id" && {
+        printf 'already installed: %s\n' "$id"
+        return 0
+    }
+
+    case " $chain " in
+        *" $id "*) die "dependency cycle detected: $chain -> $id" ;;
+    esac
+
+    local found=0
+    local i
+    for i in "${!REPO_NAMES[@]}"; do
+        local name="${REPO_NAMES[$i]}"
+        local url="${REPO_URLS[$i]}"
+        local idx="$INDEX_DIR/$name.INDEX.gz"
+        [ -f "$idx" ] || continue
+
+        local record
+        record="$(zcat "$idx" | awk -F'\t' -v id="$id" '$1 == id { print; exit }')"
+        [ -n "$record" ] || continue
+
+        local pkg_file
+        pkg_file="$(printf '%s' "$record" | cut -f4)"
+        local pkg_url="$url/$pkg_file"
+        local tmp_pkg
+        tmp_pkg="$(mktemp -t praxis-pkg-XXXXXX.prx)"
+
+        printf '  fetching %s\n' "$pkg_url"
+        if command -v curl >/dev/null 2>&1; then
+            curl -fsSL "$pkg_url" -o "$tmp_pkg"
+        else
+            wget -q "$pkg_url" -O "$tmp_pkg"
+        fi
+
+        local pkginfo_tmpdir
+        pkginfo_tmpdir="$(mktemp -d -t prx-pkginfo-XXXXXX)"
+        tar -xzf "$tmp_pkg" -C "$pkginfo_tmpdir" PKGINFO 2>/dev/null || true
+        local deps
+        deps="$(pkginfo_value "$pkginfo_tmpdir/PKGINFO" deps)"
+        rm -rf "$pkginfo_tmpdir"
+
+        if [ -n "$deps" ]; then
+            local dep
+            for dep in $deps; do
+                _pkg_is_installed "$dep" && continue
+                printf '  resolving dependency: %s -> %s\n' "$id" "$dep"
+                _install_one "$dep" "$chain $id"
+            done
+        fi
+
+        printf 'installing %s ...\n' "$id"
+        printf '  unpacking %s\n' "$id"
+        _unpack_prx "$tmp_pkg" /
+        rm -f "$tmp_pkg"
+
+        printf '  installed: %s\n' "$id"
+        found=1
+        break
+    done
+
+    [ "$found" -eq 1 ] || {
+        printf 'praxis-pkg: package not found: %s\n' "$id" >&2
+        printf 'praxis-pkg: run "praxis-pkg sync" if indexes are stale\n' >&2
+        exit 1
+    }
+}
+
 cmd_install() {
     require_root
     [ $# -ge 1 ] || die "expected at least one package identifier"
@@ -339,47 +413,7 @@ cmd_install() {
 
     local id
     for id in "$@"; do
-        printf 'installing %s ...\n' "$id"
-
-        local found=0
-        local i
-        for i in "${!REPO_NAMES[@]}"; do
-            local name="${REPO_NAMES[$i]}"
-            local url="${REPO_URLS[$i]}"
-            local idx="$INDEX_DIR/$name.INDEX.gz"
-            [ -f "$idx" ] || continue
-
-            local record
-            record="$(zcat "$idx" | awk -F'\t' -v id="$id" '$1 == id { print; exit }')"
-            [ -n "$record" ] || continue
-
-            local pkg_file
-            pkg_file="$(printf '%s' "$record" | cut -f4)"
-            local pkg_url="$url/$pkg_file"
-            local tmp_pkg
-            tmp_pkg="$(mktemp -t praxis-pkg-XXXXXX.prx)"
-
-            printf '  fetching %s\n' "$pkg_url"
-            if command -v curl >/dev/null 2>&1; then
-                curl -fsSL "$pkg_url" -o "$tmp_pkg"
-            else
-                wget -q "$pkg_url" -O "$tmp_pkg"
-            fi
-
-            printf '  unpacking %s\n' "$id"
-            _unpack_prx "$tmp_pkg" /
-            rm -f "$tmp_pkg"
-
-            printf '  installed: %s\n' "$id"
-            found=1
-            break
-        done
-
-        [ "$found" -eq 1 ] || {
-            printf 'praxis-pkg: package not found: %s\n' "$id" >&2
-            printf 'praxis-pkg: run "praxis-pkg sync" if indexes are stale\n' >&2
-            exit 1
-        }
+        _install_one "$id" ""
     done
 }
 
@@ -393,12 +427,21 @@ _unpack_prx() {
     local package_id
     package_id="$(validate_prx_archive "$prx")"
     tar -xzf "$prx" -C "$tmpdir"
+
+    local install_db="$root/var/lib/praxis-pkg/installed"
+    mkdir -p "$install_db"
+
     if [ -d "$tmpdir/data" ]; then
+        (
+            cd "$tmpdir/data"
+            find . -type f -o -type l -o -type d |
+                sed 's#^\./#/#' |
+                sort
+        ) > "$install_db/${package_id}.files"
         tar -C "$tmpdir/data" -cf - . | tar -C "$root" -xf -
     fi
     if [ -f "$tmpdir/PKGINFO" ]; then
-        mkdir -p "$root/var/lib/praxis-pkg/installed"
-        cp "$tmpdir/PKGINFO" "$root/var/lib/praxis-pkg/installed/${package_id}.PKGINFO"
+        cp "$tmpdir/PKGINFO" "$install_db/${package_id}.PKGINFO"
     fi
     rm -rf "$tmpdir"
 }
@@ -510,14 +553,30 @@ cmd_inspect() {
 cmd_remove() {
     require_root
     [ $# -ge 1 ] || die "expected at least one package identifier"
+    local install_db="/var/lib/praxis-pkg/installed"
     local id
     for id in "$@"; do
-        local info_file="/var/lib/praxis-pkg/installed/$id.PKGINFO"
+        local info_file="$install_db/$id.PKGINFO"
         [ -f "$info_file" ] || die "package not installed: $id"
         printf 'removing %s ...\n' "$id"
-        rm -f "$info_file"
+
+        local files_ledger="$install_db/$id.files"
+        if [ -f "$files_ledger" ]; then
+            # Remove deepest paths first so directories empty out before rmdir.
+            tac "$files_ledger" 2>/dev/null | while IFS= read -r path; do
+                [ -n "$path" ] && [ "$path" != "." ] || continue
+                if [ -d "/$path" ] && [ ! -L "/$path" ]; then
+                    rmdir "/$path" 2>/dev/null || true
+                else
+                    rm -f "/$path"
+                fi
+            done
+        else
+            printf '  warning: no file ledger for %s; only removing package records\n' "$id" >&2
+        fi
+
+        rm -f "$info_file" "$files_ledger" "$install_db/$id.install"
         printf '  removed: %s\n' "$id"
-        printf '  note: filesystem files are not yet tracked for removal in this version\n'
     done
 }
 
