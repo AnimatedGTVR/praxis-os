@@ -7,6 +7,9 @@
 # This manifest is audit input. It does not create or repair files.
 
 path|file|/init|praxis|live init handoff
+path|dir|/etc/service|praxis|runit-style supervise tree
+path|file|/etc/service/shell/run|praxis|shell service entrypoint
+path|file|/etc/service/udev/run|praxis|udev service entrypoint
 path|file|/bin/busybox|praxis|static busybox userspace
 path|link|/bin/sh|praxis|default shell link
 path|file|/etc/os-release|praxis|distro identity

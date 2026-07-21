@@ -30,8 +30,8 @@ PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
 
 grep -qx 'KERNEL_PROFILE=tiny' "$tmpdir/system.choice"
 grep -qx 'INIT_CHOICE=busybox' "$tmpdir/system.choice"
-grep -qx 'INIT_REQUIRED_FILES=/init,/bin/busybox' "$tmpdir/system.choice"
-grep -qx 'INIT_REQUIRED_DIRS=/etc' "$tmpdir/system.choice"
+grep -qx 'INIT_REQUIRED_FILES=/init,/bin/busybox,/etc/service/shell/run' "$tmpdir/system.choice"
+grep -qx 'INIT_REQUIRED_DIRS=/etc,/etc/service' "$tmpdir/system.choice"
 grep -qx 'PACKAGE_BUNDLES=essentials' "$tmpdir/system.choice"
 
 PRAXIS_LIB_ROOT="$repo_root/installer/lib" \
