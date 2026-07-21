@@ -35,6 +35,11 @@ PAX-era plan.
 - `docs/v2.md`'s Init Rule documents what BusyBox init actually does:
   the `runsvdir` handoff, how a service directory's `run` script is
   supervised, and how to add a new service
+- a real service enable/disable catalog following runit's own
+  convention: `/etc/sv/<name>/` holds every known service definition,
+  `/etc/service/<name>` is a symlink to it only when enabled, and
+  `praxis-sv list`/`status`/`enable`/`disable` (with `--root` support
+  for installed targets) manages that state
 - `make check` / `make v1-check` / `make v2-check` as layered validation
   gates, all exercised against real QEMU boots, not just static checks
 
@@ -50,10 +55,6 @@ PAX-era plan.
 
 ## Next
 
-- a real choice-driven enable/disable catalog for `/etc/service/*`
-  services (mirroring `config/choices/kernel/` and
-  `config/choices/init/`) — every service directory currently runs
-  unconditionally with no catalog to select from
 - richer kernel/init profile build mechanics per `docs/v2.md`
 - reproducible image generation and recovery workflow hardening
   (`Milestone 3` scope from the pre-revival plan; still applicable)
