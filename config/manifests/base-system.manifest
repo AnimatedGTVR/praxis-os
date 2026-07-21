@@ -7,9 +7,13 @@
 # This manifest is audit input. It does not create or repair files.
 
 path|file|/init|praxis|live init handoff
-path|dir|/etc/service|praxis|runit-style supervise tree
-path|file|/etc/service/shell/run|praxis|shell service entrypoint
-path|file|/etc/service/udev/run|praxis|udev service entrypoint
+path|dir|/etc/sv|praxis|runit-style service definitions (source of truth)
+path|file|/etc/sv/shell/run|praxis|shell service entrypoint
+path|file|/etc/sv/udev/run|praxis|udev service entrypoint
+path|dir|/etc/service|praxis|active supervise tree runsvdir scans
+path|link|/etc/service/shell|praxis|shell service enabled by default
+path|link|/etc/service/udev|praxis|udev service enabled by default
+path|file|/usr/local/bin/praxis-sv|praxis|service enable/disable tool
 path|file|/bin/busybox|praxis|static busybox userspace
 path|link|/bin/sh|praxis|default shell link
 path|file|/etc/os-release|praxis|distro identity

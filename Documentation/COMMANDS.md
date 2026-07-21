@@ -43,6 +43,10 @@ praxis-postinstall <target>
 praxis-seed list
 praxis-seed show <name>
 praxis-seed [--dry-run] [--seed <file|name>] <target>
+praxis-sv list
+praxis-sv status [--root <target>]
+praxis-sv enable [--root <target>] <name>
+praxis-sv disable [--root <target>] <name>
 ```
 
 ## Kernel Profiles

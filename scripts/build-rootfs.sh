@@ -164,6 +164,7 @@ cp "$repo_root/installer/praxis-contract" "$stage_dir/usr/local/bin/praxis-contr
 cp "$repo_root/installer/praxis-manifest" "$stage_dir/usr/local/bin/praxis-manifest"
 cp "$repo_root/installer/praxis-provenance" "$stage_dir/usr/local/bin/praxis-provenance"
 cp "$repo_root/installer/praxis-seed" "$stage_dir/usr/local/bin/praxis-seed"
+cp "$repo_root/installer/praxis-sv" "$stage_dir/usr/local/bin/praxis-sv"
 cp "$repo_root/installer/targetcheck" "$stage_dir/usr/local/bin/targetcheck"
 cp "$repo_root/installer/praxis-disk" "$stage_dir/usr/local/bin/praxis-disk"
 cp "$repo_root/installer/praxis-init" "$stage_dir/usr/local/bin/praxis-init"

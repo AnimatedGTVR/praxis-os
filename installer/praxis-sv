@@ -1,0 +1,163 @@
+#!/bin/sh
+
+set -eu
+
+case "$0" in
+    */*)
+        SCRIPT_DIR_PATH="${0%/*}"
+        ;;
+    *)
+        SCRIPT_DIR_PATH="."
+        ;;
+esac
+
+SCRIPT_DIR="$(CDPATH= cd -- "${SCRIPT_DIR_PATH}" && pwd)"
+
+if [ -n "${PRAXIS_LIB_ROOT:-}" ] && [ -r "${PRAXIS_LIB_ROOT}/common.sh" ]; then
+    . "${PRAXIS_LIB_ROOT}/common.sh"
+elif [ -r /usr/local/lib/praxis/common.sh ]; then
+    . /usr/local/lib/praxis/common.sh
+else
+    . "${SCRIPT_DIR}/lib/common.sh"
+fi
+
+usage() {
+    printf '%s\n' "usage:"
+    printf '%s\n' "  praxis-sv list [--root <target>]"
+    printf '%s\n' "  praxis-sv status [--root <target>]"
+    printf '%s\n' "  praxis-sv enable [--root <target>] <name>"
+    printf '%s\n' "  praxis-sv disable [--root <target>] <name>"
+}
+
+die() { printf 'praxis-sv: %s\n' "$*" >&2; exit 1; }
+
+ROOT_DIR="/"
+NAME=""
+
+action="${1:-}"
+[ -n "${action}" ] || { usage >&2; exit 1; }
+shift
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --root)
+            shift
+            [ "$#" -ge 1 ] || die "--root requires a value"
+            ROOT_DIR="$1"
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -*)
+            die "unknown option: $1"
+            ;;
+        *)
+            [ -z "${NAME}" ] || die "unexpected extra argument: $1"
+            NAME="$1"
+            ;;
+    esac
+    shift
+done
+
+sv_source_dir() {
+    printf '%s\n' "${ROOT_DIR%/}/etc/sv"
+}
+
+sv_active_dir() {
+    printf '%s\n' "${ROOT_DIR%/}/etc/service"
+}
+
+require_known_service() {
+    name="$1"
+    src="$(sv_source_dir)/${name}"
+    [ -d "${src}" ] || die "unknown service: ${name} (no ${src})"
+    [ -x "${src}/run" ] || die "service ${name} has no executable run script: ${src}/run"
+}
+
+cmd_list() {
+    src_dir="$(sv_source_dir)"
+    [ -d "${src_dir}" ] || die "no service directory: ${src_dir}"
+    for entry in "${src_dir}"/*/; do
+        [ -d "${entry}" ] || continue
+        basename "${entry%/}"
+    done | sort
+}
+
+cmd_status() {
+    active_dir="$(sv_active_dir)"
+    printf '%-16s %s\n' NAME STATE
+    printf '%-16s %s\n' ---- -----
+    cmd_list | while IFS= read -r name; do
+        [ -n "${name}" ] || continue
+        if [ -L "${active_dir}/${name}" ]; then
+            printf '%-16s %s\n' "${name}" enabled
+        elif [ -e "${active_dir}/${name}" ]; then
+            printf '%-16s %s\n' "${name}" "enabled (not a symlink)"
+        else
+            printf '%-16s %s\n' "${name}" disabled
+        fi
+    done
+}
+
+cmd_enable() {
+    name="${1:-}"
+    [ -n "${name}" ] || die "expected a service name"
+    require_known_service "${name}"
+
+    active_dir="$(sv_active_dir)"
+    mkdir -p "${active_dir}"
+
+    link_path="${active_dir}/${name}"
+    if [ -L "${link_path}" ]; then
+        printf 'already enabled: %s\n' "${name}"
+        return 0
+    fi
+    if [ -e "${link_path}" ]; then
+        die "refusing to overwrite non-symlink at ${link_path}"
+    fi
+
+    ln -s "../sv/${name}" "${link_path}"
+    printf 'enabled: %s\n' "${name}"
+}
+
+cmd_disable() {
+    name="${1:-}"
+    [ -n "${name}" ] || die "expected a service name"
+
+    active_dir="$(sv_active_dir)"
+    link_path="${active_dir}/${name}"
+
+    if [ ! -e "${link_path}" ] && [ ! -L "${link_path}" ]; then
+        printf 'already disabled: %s\n' "${name}"
+        return 0
+    fi
+    if [ ! -L "${link_path}" ]; then
+        die "refusing to remove non-symlink at ${link_path}"
+    fi
+
+    rm -f "${link_path}"
+    printf 'disabled: %s\n' "${name}"
+}
+
+case "${action}" in
+    list)
+        cmd_list
+        ;;
+    status)
+        cmd_status
+        ;;
+    enable)
+        cmd_enable "${NAME}"
+        ;;
+    disable)
+        cmd_disable "${NAME}"
+        ;;
+    -h|--help)
+        usage
+        ;;
+    *)
+        usage >&2
+        exit 1
+        ;;
+esac
